@@ -13,6 +13,8 @@
     "@sveltejs/vite-plugin-svelte": "^1.0.0-next.11",
     "@tsconfig/svelte": "^2.0.1",
     "@types/node": "^18.15.11",
+    "dompurify": "3.2.7",
+    "marked": "12.0.2",
     "onchange": "^7.1.0",
     "prettier": "^2.3.2",
     "svelte": "^3.37.0",
