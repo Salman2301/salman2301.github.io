@@ -22,7 +22,7 @@
   import { onDestroy, onMount, setContext, tick } from 'svelte';
   import { getCommand, commandNames } from '../../core/registry';
   import type { Config } from '../../core/types';
-  import { commandHistory, PROMPT_HOST, PROMPT_USER, TERMINAL_CTX, type TerminalContext } from '../../terminal/context';
+  import { commandHistory, PROMPT_HOST, PROMPT_USER, TERMINAL_CTX, terminals, type TerminalContext } from '../../terminal/context';
   import { commonPrefix, levenshtein, splitChain, tokenize } from '../../terminal/parse';
 
   export let paneId: string;
@@ -273,6 +273,7 @@
   }
 
   onMount(async () => {
+    terminals.set(paneId, ctx);
     scrollSoon();
     if (!session.started) {
       session.started = true;
@@ -282,7 +283,10 @@
     if (focused) focusInput();
   });
 
-  onDestroy(() => controller?.abort());
+  onDestroy(() => {
+    controller?.abort();
+    if (terminals.get(paneId) === ctx) terminals.delete(paneId);
+  });
 
   /* ------------------------------------------------------------- linkify */
 
