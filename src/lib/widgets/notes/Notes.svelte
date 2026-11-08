@@ -577,5 +577,18 @@
       grid-template-columns: 1fr;
       grid-template-rows: 1fr 1fr;
     }
+    /* Let the toolbar wrap instead of clipping pin / export / delete off the edge. */
+    .bar {
+      flex-wrap: wrap;
+      white-space: normal;
+      row-gap: 6px;
+    }
+    .title {
+      flex: 1 1 0;
+    }
+    .bar .txt {
+      min-height: 28px;
+      padding: 0 6px;
+    }
   }
 </style>

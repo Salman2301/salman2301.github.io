@@ -317,11 +317,31 @@
     cursor: default;
   }
   @media (max-width: 720px) {
+    /* Touch has no hover, so the header actions are always visible and easier to hit. */
+    header {
+      height: 36px;
+      flex-basis: 36px;
+      gap: 4px;
+    }
+    .title {
+      padding: 6px 8px;
+    }
+    .actions {
+      opacity: 1;
+    }
+    .actions button {
+      width: 32px;
+      height: 32px;
+    }
     .actions button:not(.close) {
       display: none;
     }
     .actions button:nth-child(3) {
       display: grid;
+    }
+    /* Stay inside a narrow screen: never wider than the pane's right edge. */
+    .menu {
+      width: min(300px, calc(100vw - 48px));
     }
   }
 </style>
