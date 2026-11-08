@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
-import { col, leaf, row, setLayout, workspace, type PaneNode } from './workspace';
+import { col, leaf, leaves, row, setLayout, workspace, type PaneNode } from './workspace';
+import { getWidget } from './registry';
 import { persisted } from './storage';
 
 /**
@@ -21,6 +22,18 @@ export const builtinTemplates: TemplateDef[] = [
     title: 'Classic',
     description: 'One full-screen terminal. The original.',
     build: () => leaf('terminal', { startup: ['whoami', 'motd'] }),
+  },
+  {
+    id: 'duo',
+    title: 'Duo',
+    description: 'Two terminals side by side.',
+    build: () => row([leaf('terminal', { startup: ['whoami'] }), leaf('terminal', { startup: ['help'] })], [0.55, 0.45]),
+  },
+  {
+    id: 'playground',
+    title: 'Playground',
+    description: 'The arcade next to a terminal.',
+    build: () => row([leaf('arcade'), leaf('terminal', { startup: ['scores'] })], [0.62, 0.38]),
   },
   {
     id: 'focus',
@@ -95,7 +108,9 @@ export function allTemplates(saved: SavedTemplate[] = get(savedTemplates)): Temp
     build: () => t.root,
     custom: true,
   }));
-  return [...builtinTemplates, ...custom];
+  // Hide built-in templates that need widgets which are not installed yet.
+  const available = builtinTemplates.filter((t) => leaves(t.build()).every((l) => getWidget(l.widget)));
+  return [...available, ...custom];
 }
 
 export function findTemplate(id: string): TemplateDef | undefined {

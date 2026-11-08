@@ -72,6 +72,11 @@ export interface GameDef {
   lowerIsBetter?: boolean;
   /** Score label, default "score". */
   scoreLabel?: string;
+  /**
+   * Typing games: the shell normally uses P to pause. With this flag only
+   * Escape pauses, and every other key goes to the game.
+   */
+  captureAllKeys?: boolean;
 }
 
 export interface GameApi {

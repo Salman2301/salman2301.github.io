@@ -4,7 +4,7 @@
   import { statusItems } from '../core/status';
   import { findTemplate } from '../core/templates';
   import { themeStore } from '../core/theme';
-  import { openOverlay, templatePickerOpen } from '../core/ui';
+  import { templatePickerOpen } from '../core/ui';
   import { focusPane, leaves, workspace } from '../core/workspace';
 
   let now = new Date();
@@ -35,7 +35,6 @@
       <span class="seg item tone-{item.tone ?? 'normal'}" title={item.title}>{item.text}</span>
     {/if}
   {/each}
-  <button class="seg hint" on:click={() => openOverlay.set('palette')} title="Command palette">ctrl+k</button>
   <span class="seg theme" title="Theme (type: theme)">{$themeStore}</span>
   <span class="seg clock">{time}</span>
 </footer>

@@ -8,18 +8,16 @@
   const chips: { label: string; run?: string; action?: () => void }[] = [
     { label: 'help', run: 'help' },
     { label: 'templates', action: () => templatePickerOpen.set(true) },
-    { label: 'games', run: 'games' },
-    { label: 'pomodoro', run: 'pomodoro' },
-    { label: 'notes', run: 'notes' },
-    { label: 'music', run: 'spotify' },
-    { label: 'neofetch', run: 'neofetch' },
+    { label: 'play snake', run: 'play snake' },
+    { label: 'theme', run: 'theme' },
+    { label: 'split', run: 'split' },
   ];
 </script>
 
 <div class="motd">
   <p>
-    Welcome. This terminal is also a workspace: split panes, pick a <span class="hl">template</span>, and open widgets like a
-    pomodoro, markdown notes, YouTube, Spotify and an arcade.
+    Welcome. This terminal is also a workspace: split panes, resize them, pick a <span class="hl">template</span>, and open
+    widgets like the arcade.
   </p>
   <div class="chips">
     {#each chips as c}
@@ -27,7 +25,7 @@
     {/each}
   </div>
   <p class="keys">
-    <kbd>alt</kbd>+<kbd>t</kbd> templates · <kbd>ctrl</kbd>+<kbd>k</kbd> palette · <kbd>alt</kbd>+<kbd>\</kbd> split ·
+    <kbd>alt</kbd>+<kbd>t</kbd> templates · <kbd>alt</kbd>+<kbd>\</kbd> split ·
     <kbd>alt</kbd>+<kbd>arrows</kbd> move focus · <kbd>tab</kbd> completes
   </p>
 </div>

@@ -97,7 +97,8 @@
       start();
       return;
     }
-    if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+    const pauseKey = e.key === 'Escape' || (!game.captureAllKeys && (e.key === 'p' || e.key === 'P'));
+    if (pauseKey) {
       e.preventDefault();
       userPaused = !userPaused;
       return;
@@ -170,7 +171,7 @@
     {:else if paused}
       <button class="overlay soft" on:click={() => { userPaused = false; root?.focus(); }}>
         <span class="big">paused</span>
-        <span class="cta">{!focused || !windowFocused ? 'click to resume' : 'press P, space or click to resume'}</span>
+        <span class="cta">{!focused || !windowFocused ? 'click to resume' : game.captureAllKeys ? 'press esc or click to resume' : 'press P, space or click to resume'}</span>
       </button>
     {/if}
   </div>
