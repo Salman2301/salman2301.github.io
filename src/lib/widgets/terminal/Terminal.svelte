@@ -44,7 +44,6 @@
   let controller: AbortController | null = null;
   let historyPos = -1; // -1 = editing a new line
   let draft = '';
-  let lastTabValue = '';
 
   /* -------------------------------------------------------------- output */
 
@@ -169,28 +168,47 @@
     return '';
   }
 
-  $: suggestion = busy ? '' : suggestionFor(value, $commandHistory);
+  /* Floating completion menu: hovers over the output instead of printing into it. */
+  let menuIndex = 0;
+  let menuDismissed = false;
+  let menuBelow = false;
+  $: comp = busy || !value.trim() ? { candidates: [] as string[], head: '', partial: '' } : candidatesFor(value);
+  $: menu = menuDismissed ? [] : comp.candidates.filter((c) => c !== comp.partial).slice(0, 8);
+  $: menuOpen = menu.length >= 2;
+  $: if (menuIndex >= menu.length) menuIndex = 0;
+
+  $: suggestion = busy ? '' : menuOpen ? comp.head + menu[menuIndex] : suggestionFor(value, $commandHistory);
   $: ghost = suggestion.startsWith(value) ? suggestion.slice(value.length) : '';
 
+  function describe(item: string): string {
+    return comp.head === '' ? getCommand(item)?.description ?? '' : '';
+  }
+
+  function onInput() {
+    menuIndex = 0;
+    menuDismissed = false;
+    if (input && scroller) {
+      // open the menu below the prompt when there is no room above it
+      menuBelow = input.getBoundingClientRect().top - scroller.getBoundingClientRect().top < 190;
+    }
+  }
+
+  function accept(item: string) {
+    value = comp.head + item + ' ';
+    menuIndex = 0;
+    moveCaretToEnd();
+  }
+
   function complete() {
-    const { candidates, head } = candidatesFor(value);
+    if (menuOpen) return accept(menu[menuIndex]);
+    const { candidates, head } = comp;
     if (!candidates.length) return;
     if (candidates.length === 1) {
       value = head + candidates[0] + ' ';
-      lastTabValue = '';
       return;
     }
-    const prefix = commonPrefix(candidates);
-    const next = head + prefix;
-    if (next.length > value.length) {
-      value = next;
-      lastTabValue = value;
-    } else if (lastTabValue === value) {
-      push({ kind: 'echo', text: value });
-      print(candidates.join('   '), 'muted');
-    } else {
-      lastTabValue = value;
-    }
+    const next = head + commonPrefix(candidates);
+    if (next.length > value.length) value = next;
   }
 
   /* ------------------------------------------------------------ keyboard */
@@ -223,6 +241,13 @@
     } else if (e.key === 'ArrowRight' && ghost && input.selectionStart === value.length) {
       e.preventDefault();
       value = suggestion;
+    } else if (menuOpen && historyPos === -1 && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      const d = e.key === 'ArrowDown' ? 1 : -1;
+      menuIndex = (menuIndex + d + menu.length) % menu.length;
+    } else if (menuOpen && e.key === 'Escape') {
+      e.preventDefault();
+      menuDismissed = true;
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       const h = $commandHistory;
@@ -330,6 +355,7 @@
       <input
         bind:this={input}
         bind:value
+        on:input={onInput}
         on:keydown={onKeyDown}
         spellcheck="false"
         autocomplete="off"
@@ -337,6 +363,17 @@
         aria-label="Terminal input"
         disabled={false}
       />
+      {#if menuOpen}
+        <ul class="menu" class:below={menuBelow} role="listbox" aria-label="Completions">
+          {#each menu as item, i (item)}
+            <li role="option" aria-selected={i === menuIndex} class:active={i === menuIndex} on:mousedown|preventDefault={() => accept(item)}>
+              <span class="item">{item}</span>
+              {#if describe(item)}<span class="desc">{describe(item)}</span>{/if}
+            </li>
+          {/each}
+          <li class="hint" aria-hidden="true">tab accept · up/down choose · esc close</li>
+        </ul>
+      {/if}
     </div>
   </div>
   {#if busy}<div class="line tone-muted hint">running... press Ctrl+C to stop</div>{/if}
@@ -409,6 +446,7 @@
     opacity: 0.35;
   }
   .field {
+    white-space: normal;
     position: relative;
     flex: 1;
     min-width: 0;
@@ -436,6 +474,7 @@
     opacity: 0.55;
   }
   input {
+    display: block;
     position: relative;
     width: 100%;
     background: transparent;
@@ -445,5 +484,57 @@
   }
   .hint {
     font-size: 12px;
+  }
+  .menu {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 4px);
+    z-index: 20;
+    min-width: 220px;
+    max-width: min(520px, 100%);
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    border-radius: 8px;
+    border: 1px solid var(--bg2);
+    background: color-mix(in srgb, var(--bg2) 22%, var(--bg1));
+    box-shadow: 0 12px 30px -12px rgba(0, 0, 0, 0.6);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .menu.below {
+    bottom: auto;
+    top: calc(100% + 4px);
+  }
+  .menu li {
+    display: flex;
+    gap: 12px;
+    padding: 2px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .menu li.active {
+    background: color-mix(in srgb, var(--hl1) 22%, transparent);
+  }
+  .menu .item {
+    color: var(--t2);
+  }
+  .menu li.active .item {
+    color: var(--hl1);
+  }
+  .menu .desc {
+    color: var(--t1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .menu li.hint {
+    cursor: default;
+    font-size: 11px;
+    color: var(--t1);
+    border-top: 1px dashed var(--bg2);
+    border-radius: 0;
+    margin-top: 2px;
+    padding-top: 4px;
   }
 </style>

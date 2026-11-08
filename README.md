@@ -8,7 +8,7 @@ Type `help` in the terminal to see every command.
 
 - **Tiling panes**: split, resize (drag or keyboard), maximize, drag a pane header onto another pane to swap them, and turn any pane into any widget from its title menu.
 - **Templates**: pick a layout with `Alt+T` or `templates`, or save your own (`template save <name>`). More templates appear automatically as more widgets are added.
-- **Widgets**: the terminal and the arcade.
+- **Widgets**: the terminal, markdown notes (`notes`, edit / split / preview, import and export .md) and the arcade.
 - **Arcade**: mini games with saved high scores (`games`, `play snake`).
 - **Extras**: 16 themes (`theme`), share links that recreate a layout (`share`), a tmux-style status bar, tab completion with inline suggestions, command chaining with `&&`.
 
