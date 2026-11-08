@@ -8,6 +8,7 @@
   const chips: { label: string; run?: string; action?: () => void }[] = [
     { label: 'help', run: 'help' },
     { label: 'templates', action: () => templatePickerOpen.set(true) },
+    { label: 'notes', run: 'notes' },
     { label: 'play snake', run: 'play snake' },
     { label: 'theme', run: 'theme' },
     { label: 'split', run: 'split' },
@@ -17,7 +18,7 @@
 <div class="motd">
   <p>
     Welcome. This terminal is also a workspace: split panes, resize them, pick a <span class="hl">template</span>, and open
-    widgets like the arcade.
+    widgets like markdown notes and the arcade.
   </p>
   <div class="chips">
     {#each chips as c}
