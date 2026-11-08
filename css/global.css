@@ -36,6 +36,20 @@ body {
 @media (max-width: 720px) {
   body {
     overflow: auto;
+    -webkit-text-size-adjust: 100%;
+  }
+  /* iOS Safari zooms the whole page when an input is focused below 16px. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  /* No 300ms tap delay, no grey flash on tap. */
+  button,
+  a,
+  [role='button'] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
