@@ -5,7 +5,7 @@ const game: GameDef = {
   id: 'snake',
   title: 'Snake',
   description: 'Eat, grow, and do not hit the walls or yourself. It speeds up as you grow.',
-  controls: 'arrows / wasd · swipe on touch · p pause',
+  controls: 'arrows / wasd · swipe on touch · space pause',
   component: Snake,
 };
 
