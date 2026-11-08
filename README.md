@@ -4,6 +4,22 @@ A terminal portfolio that doubles as a tiling workspace. Live at **[salman2301.g
 
 Type `help` in the terminal to see every command.
 
+![Terminal portfolio](docs/screenshots/terminal.png)
+
+## Screenshots
+
+| Morning Brief template | Markdown notes |
+| --- | --- |
+| ![Hacker News, pomodoro and tasks](docs/screenshots/morning-brief.png) | ![Notes next to the terminal](docs/screenshots/notes.png) |
+
+| Autocomplete | Tetris |
+| --- | --- |
+| ![Floating autocomplete menu](docs/screenshots/autocomplete.png) | ![Tetris](docs/screenshots/tetris.png) |
+
+| Space Impact | Bounce | Car Racing |
+| --- | --- | --- |
+| ![Space Impact](docs/screenshots/spaceimpact.png) | ![Bounce](docs/screenshots/bounce.png) | ![Car Racing](docs/screenshots/racing.png) |
+
 ## What's inside
 
 - **Tiling panes**: split, resize (drag or keyboard), maximize, drag a pane header onto another pane to swap them, and turn any pane into any widget from its title menu.
