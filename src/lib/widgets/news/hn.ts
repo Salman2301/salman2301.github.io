@@ -51,3 +51,52 @@ export function ago(unix: number): string {
   const h = Math.round(m / 60);
   return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
 }
+
+/** Ranges for the "top" feed. "live" is the current front page. */
+export type Period = 'day' | 'month' | 'year' | 'live';
+export const PERIODS: Period[] = ['day', 'month', 'year', 'live'];
+const PERIOD_SECONDS: Record<Exclude<Period, 'live'>, number> = {
+  day: 86_400,
+  month: 30 * 86_400,
+  year: 365 * 86_400,
+};
+
+const SEARCH = 'https://hn.algolia.com/api/v1/search';
+
+interface AlgoliaHit {
+  objectID: string;
+  title: string | null;
+  url?: string | null;
+  points: number | null;
+  author: string;
+  created_at_i: number;
+  num_comments: number | null;
+}
+
+/**
+ * Most popular stories posted within the period (Algolia's HN search, ranked
+ * by points). The live front page is fetchStories('top').
+ */
+export async function fetchTopSince(period: Exclude<Period, 'live'>, limit = 30, signal?: AbortSignal, fresh = false): Promise<Story[]> {
+  const key = `top-${period}:${limit}`;
+  const hit = cache.get(key);
+  if (!fresh && hit && Date.now() - hit.at < 5 * 60_000) return hit.stories;
+  const since = Math.floor(Date.now() / 1000) - PERIOD_SECONDS[period];
+  const url = `${SEARCH}?tags=story&numericFilters=${encodeURIComponent(`created_at_i>${since}`)}&hitsPerPage=${limit}`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`Hacker News search returned ${res.status}`);
+  const data = (await res.json()) as { hits: AlgoliaHit[] };
+  const stories: Story[] = data.hits
+    .filter((h) => h.title)
+    .map((h) => ({
+      id: Number(h.objectID),
+      title: h.title as string,
+      url: h.url ?? undefined,
+      score: h.points ?? 0,
+      by: h.author,
+      time: h.created_at_i,
+      descendants: h.num_comments ?? 0,
+    }));
+  cache.set(key, { at: Date.now(), stories });
+  return stories;
+}

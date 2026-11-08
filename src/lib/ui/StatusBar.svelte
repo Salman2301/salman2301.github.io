@@ -3,17 +3,21 @@
   import { getWidget } from '../core/registry';
   import { statusItems } from '../core/status';
   import { findTemplate } from '../core/templates';
-  import { themeStore } from '../core/theme';
+  import { setTheme, themeNames, themeStore } from '../core/theme';
   import { templatePickerOpen } from '../core/ui';
   import { focusPane, leaves, workspace } from '../core/workspace';
+  import ClockPanel from './ClockPanel.svelte';
 
   let now = new Date();
   const t = setInterval(() => (now = new Date()), 1000);
   onDestroy(() => clearInterval(t));
 
+  let clockOpen = false;
+
   $: panes = leaves($workspace.root);
   $: templateName = $workspace.template ? findTemplate($workspace.template)?.title ?? $workspace.template : 'custom';
   $: time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  $: day = now.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
 </script>
 
 <footer class="statusbar">
@@ -35,9 +39,19 @@
       <span class="seg item tone-{item.tone ?? 'normal'}" title={item.title}>{item.text}</span>
     {/if}
   {/each}
-  <span class="seg theme" title="Theme (type: theme)">{$themeStore}</span>
-  <span class="seg clock">{time}</span>
+  <label class="seg theme" title="Theme (or type: theme <name>)">
+    <span class="theme-label">theme</span>
+    <select aria-label="Theme" value={$themeStore} on:change={(e) => setTheme(e.currentTarget.value)}>
+      {#each themeNames as name}<option value={name}>{name}</option>{/each}
+    </select>
+  </label>
+  <button class="seg clock" data-clock-toggle class:open={clockOpen} aria-expanded={clockOpen} title="Clock, calendar and timer" on:click={() => (clockOpen = !clockOpen)}>
+    <span class="day">{day}</span>
+    <b>{time}</b>
+  </button>
 </footer>
+
+<ClockPanel bind:open={clockOpen} />
 
 <style>
   .statusbar {
@@ -104,18 +118,54 @@
     border-left: 1px solid color-mix(in srgb, var(--bg2) 80%, transparent);
   }
   .clock {
-    color: var(--t2);
+    gap: 8px;
+    color: var(--t1);
     border-left: 1px solid color-mix(in srgb, var(--bg2) 80%, transparent);
   }
-  .theme,
-  .hint {
+  .clock b {
+    color: var(--t2);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .clock.open,
+  .clock:hover {
+    color: var(--hl1);
+  }
+  .theme {
+    gap: 6px;
+    padding: 0 6px 0 10px;
     border-left: 1px solid color-mix(in srgb, var(--bg2) 80%, transparent);
+  }
+  .theme-label {
+    opacity: 0.7;
+  }
+  .theme select {
+    max-width: 150px;
+    height: 100%;
+    padding: 0 4px;
+    background: transparent;
+    color: var(--t2);
+    border: 0;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    outline: none;
+  }
+  .theme select:focus-visible {
+    color: var(--hl1);
+  }
+  .theme option {
+    background: var(--bg1);
+    color: var(--t2);
   }
   @media (max-width: 720px) {
     .windows,
-    .theme,
-    .hint {
+    .theme-label,
+    .clock .day {
       display: none;
+    }
+    .theme select {
+      max-width: 110px;
     }
   }
 </style>
