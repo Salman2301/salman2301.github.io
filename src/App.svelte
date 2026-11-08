@@ -9,12 +9,15 @@
     focusPane,
     leaf,
     leaves,
+    newTab,
     splitPane,
+    stepTab,
     toggleMaximize,
     workspace,
   } from './lib/core/workspace';
   import PaneTree from './lib/ui/PaneTree.svelte';
   import StatusBar from './lib/ui/StatusBar.svelte';
+  import TabBar from './lib/ui/TabBar.svelte';
   import TemplatePicker from './lib/ui/TemplatePicker.svelte';
   import Toasts from './lib/ui/Toasts.svelte';
 
@@ -48,6 +51,16 @@
         handled();
         if (focused) closePane(focused);
         return;
+      case 'KeyN':
+        handled();
+        newTab();
+        return;
+      case 'BracketLeft':
+        handled();
+        return stepTab(-1);
+      case 'BracketRight':
+        handled();
+        return stepTab(1);
       case 'KeyM':
       case 'KeyF':
         handled();
@@ -80,8 +93,11 @@
 <svelte:window on:keydown|capture={onKeyDown} />
 
 <div class="app">
+  <TabBar />
   <main class="workspace">
-    <PaneTree node={$workspace.root} />
+    {#key $workspace.active}
+      <PaneTree node={$workspace.root} />
+    {/key}
   </main>
   <StatusBar />
 </div>

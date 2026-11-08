@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import type { Config } from '../../core/types';
-  import { ago, domain, FEEDS, fetchStories, itemUrl, type Feed, type Story } from './hn';
+  import { ago, domain, FEEDS, fetchStories, fetchTopSince, itemUrl, PERIODS, type Feed, type Period, type Story } from './hn';
 
   export let paneId: string;
   export let focused = false;
@@ -10,21 +10,29 @@
   $: void paneId, focused;
 
   $: feed = ((config.feed as Feed) || 'top') as Feed;
+  $: period = ((config.period as Period) || 'day') as Period;
+  /** Which list is showing: "top" is split into day / month / year / live. */
+  $: source = feed === 'top' && period !== 'live' ? `top-${period}` : feed;
 
   let stories: Story[] = [];
   let loading = false;
   let error = '';
   let updated = 0;
   let controller: AbortController | null = null;
-  let loadedFeed = '';
+  let loadedSource = '';
 
-  async function load(f: Feed, fresh = false) {
+  function fetchFor(src: string, signal: AbortSignal, fresh: boolean) {
+    if (src.startsWith('top-')) return fetchTopSince(src.slice(4) as Exclude<Period, 'live'>, 30, signal, fresh);
+    return fetchStories(src as Feed, 30, signal, fresh);
+  }
+
+  async function load(src: string, fresh = false) {
     controller?.abort();
     controller = new AbortController();
     loading = true;
     error = '';
     try {
-      stories = await fetchStories(f, 30, controller.signal, fresh);
+      stories = await fetchFor(src, controller.signal, fresh);
       updated = Date.now();
     } catch (e) {
       if ((e as DOMException).name !== 'AbortError') error = 'Could not load Hacker News. Check your connection and retry.';
@@ -33,14 +41,14 @@
     }
   }
 
-  $: if (feed !== loadedFeed) {
-    loadedFeed = feed;
-    load(feed);
+  $: if (source !== loadedSource) {
+    loadedSource = source;
+    load(source);
   }
 
   // refresh every 10 minutes while open
   let timer: ReturnType<typeof setInterval>;
-  onMount(() => (timer = setInterval(() => load(feed, true), 10 * 60_000)));
+  onMount(() => (timer = setInterval(() => load(source, true), 10 * 60_000)));
   onDestroy(() => {
     clearInterval(timer);
     controller?.abort();
@@ -53,11 +61,18 @@
     <div class="feeds">
       {#each FEEDS as f}<button class:on={feed === f} on:click={() => updateConfig({ feed: f })}>{f}</button>{/each}
     </div>
-    <button class="refresh" on:click={() => load(feed, true)} disabled={loading} title="Refresh">{loading ? 'loading' : 'refresh'}</button>
+    <button class="refresh" on:click={() => load(source, true)} disabled={loading} title="Refresh">{loading ? 'loading' : 'refresh'}</button>
   </div>
+  {#if feed === 'top'}
+    <div class="periods" role="group" aria-label="Top stories range">
+      {#each PERIODS as p}
+        <button class:on={period === p} on:click={() => updateConfig({ period: p })}>{p === 'live' ? 'live' : `top ${p}`}</button>
+      {/each}
+    </div>
+  {/if}
 
   {#if error}
-    <div class="msg">{error} <button on:click={() => load(feed, true)}>retry</button></div>
+    <div class="msg">{error} <button on:click={() => load(source, true)}>retry</button></div>
   {:else if !stories.length && loading}
     <ol class="list">
       {#each Array(8) as _}<li class="skeleton"><span /><span /></li>{/each}
@@ -128,6 +143,29 @@
   .feeds button:hover:not(.on),
   .refresh:hover {
     color: var(--hl1);
+  }
+  .periods {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 5px 10px;
+    border-bottom: 1px dashed color-mix(in srgb, var(--bg2) 80%, transparent);
+  }
+  .periods button {
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--bg2);
+    font-size: 11px;
+    color: var(--t1);
+  }
+  .periods button:hover:not(.on) {
+    color: var(--hl1);
+    border-color: var(--hl1);
+  }
+  .periods button.on {
+    color: var(--bg1);
+    background: var(--hl1);
+    border-color: var(--hl1);
   }
   .list {
     flex: 1;

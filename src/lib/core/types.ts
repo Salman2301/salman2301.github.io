@@ -77,6 +77,11 @@ export interface GameDef {
    * Escape pauses, and every other key goes to the game.
    */
   captureAllKeys?: boolean;
+  /**
+   * Extra on-screen buttons for touch screens, beyond the arrow pad the shell
+   * always shows. Each one sends a key press with this code and key.
+   */
+  touch?: { label: string; code: string; key: string }[];
 }
 
 export interface GameApi {

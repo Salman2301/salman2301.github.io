@@ -115,6 +115,22 @@
     upHandlers.forEach((h) => h(e));
   }
 
+  /**
+   * On-screen pad for touch screens. Press and release feed the same keydown
+   * and keyup path a real key takes, so every game's controls work unchanged.
+   */
+  const PAD = [
+    { code: 'ArrowUp', key: 'ArrowUp', glyph: '▲', area: 'up' },
+    { code: 'ArrowLeft', key: 'ArrowLeft', glyph: '◀', area: 'left' },
+    { code: 'ArrowRight', key: 'ArrowRight', glyph: '▶', area: 'right' },
+    { code: 'ArrowDown', key: 'ArrowDown', glyph: '▼', area: 'down' },
+  ];
+
+  function padPress(e: PointerEvent, code: string, key: string, down: boolean) {
+    e.preventDefault();
+    root?.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, key, bubbles: true, cancelable: true }));
+  }
+
   let wasFocused = false;
   $: {
     if (focused && !wasFocused && root) tick().then(() => root?.focus({ preventScroll: true }));
@@ -173,6 +189,35 @@
         <span class="big">paused</span>
         <span class="cta">{!focused || !windowFocused ? 'click to resume' : game.captureAllKeys ? 'press esc or click to resume' : 'press space or click to resume'}</span>
       </button>
+    {/if}
+  </div>
+
+  <div class="pad" aria-label="Touch controls">
+    <div class="dpad">
+      {#each PAD as k (k.code)}
+        <button
+          class="pk {k.area}"
+          aria-label={k.key.replace('Arrow', '').toLowerCase()}
+          on:pointerdown={(e) => padPress(e, k.code, k.key, true)}
+          on:pointerup={(e) => padPress(e, k.code, k.key, false)}
+          on:pointercancel={(e) => padPress(e, k.code, k.key, false)}
+          on:contextmenu|preventDefault
+        >{k.glyph}</button>
+      {/each}
+    </div>
+    {#if game.touch?.length}
+      <div class="extra">
+        {#each game.touch as t (t.code)}
+          <button
+            class="pk action"
+            aria-label={t.label}
+            on:pointerdown={(e) => padPress(e, t.code, t.key, true)}
+            on:pointerup={(e) => padPress(e, t.code, t.key, false)}
+            on:pointercancel={(e) => padPress(e, t.code, t.key, false)}
+            on:contextmenu|preventDefault
+          >{t.label}</button>
+        {/each}
+      </div>
     {/if}
   </div>
 </div>
@@ -288,6 +333,81 @@
     color: var(--t2);
     border: 1px solid var(--bg2);
   }
+  .pad {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px 10px;
+    border-top: 1px dashed color-mix(in srgb, var(--bg2) 80%, transparent);
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  .dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 48px);
+    grid-template-areas: '. up .' 'left . right' '. down .';
+    gap: 4px;
+  }
+  .extra {
+    display: flex;
+    gap: 10px;
+  }
+  .pk {
+    display: grid;
+    place-items: center;
+    min-width: 56px;
+    min-height: 48px;
+    border-radius: 10px;
+    border: 1px solid var(--bg2);
+    background: color-mix(in srgb, var(--bg2) 30%, transparent);
+    color: var(--t2);
+    font-size: 16px;
+    touch-action: none;
+  }
+  .pk:active {
+    background: var(--hl1);
+    border-color: var(--hl1);
+    color: var(--bg1);
+  }
+  .pk.up {
+    grid-area: up;
+  }
+  .pk.left {
+    grid-area: left;
+  }
+  .pk.right {
+    grid-area: right;
+  }
+  .pk.down {
+    grid-area: down;
+  }
+  .pk.action {
+    min-width: 72px;
+    height: 56px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  /* Only touch-first devices get the pad; keyboards keep the full stage. */
+  @media (hover: none) and (pointer: coarse) {
+    .pad {
+      display: flex;
+    }
+  }
+  @media (max-width: 720px) {
+    .bar {
+      flex-wrap: wrap;
+      white-space: normal;
+      row-gap: 6px;
+    }
+    .stat {
+      white-space: nowrap;
+    }
+  }
+
   @keyframes blink {
     to {
       visibility: hidden;

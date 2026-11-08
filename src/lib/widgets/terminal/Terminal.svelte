@@ -537,4 +537,11 @@
     margin-top: 2px;
     padding-top: 4px;
   }
+
+  @media (max-width: 720px) {
+    /* 16px stops iOS zooming when the prompt is focused. The ghost text inherits it, so completions stay aligned. */
+    .input-line {
+      font-size: 16px;
+    }
+  }
 </style>

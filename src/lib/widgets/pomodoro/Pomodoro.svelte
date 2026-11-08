@@ -22,7 +22,14 @@
 
   $: total = $pomodoro.durations[$pomodoro.mode] * 60_000;
   $: progress = total ? 1 - $remainingMs / total : 0;
-  $: size = Math.max(110, Math.min(w - 24, h - (h > 360 ? 170 : 110), 300));
+  // Breakpoints on the pane's height: the task and stats go first, then the
+  // label and session dots, so the timer and its buttons always fit.
+  $: compact = h > 0 && h < 330;
+  $: tiny = h > 0 && h < 210;
+  $: size = Math.max(
+    64,
+    Math.min(w - 24, h - (compact ? 100 : h > 360 ? 170 : 130), 300),
+  );
   $: today = $pomodoroStats[todayKey()] ?? { minutes: 0, sessions: 0 };
   $: open = $tasks.filter((t) => !t.done);
   const R = 46;
@@ -56,17 +63,19 @@
     {/each}
   </div>
 
-  <div class="ring" style="width:{size}px;height:{size}px">
+  <div class="dial" style="width:{size}px;height:{size}px">
     <svg viewBox="0 0 100 100">
       <circle class="track" cx="50" cy="50" r={R} />
       <circle class="bar" cx="50" cy="50" r={R} stroke-dasharray={CIRC} stroke-dashoffset={CIRC * (1 - progress)} />
     </svg>
     <div class="center">
       <span class="time" style="font-size:{size * 0.21}px">{fmt($remainingMs)}</span>
-      <span class="label">{$pomodoro.running || $remainingMs === total ? MODE_LABEL[$pomodoro.mode] : 'paused'}</span>
-      <span class="dots" aria-label="{$pomodoro.cycle % $pomodoro.longEvery} of {$pomodoro.longEvery} sessions">
-        {#each Array($pomodoro.longEvery) as _, i}<span class:done={i < $pomodoro.cycle % $pomodoro.longEvery} />{/each}
-      </span>
+      {#if !tiny}
+        <span class="label">{$pomodoro.running || $remainingMs === total ? MODE_LABEL[$pomodoro.mode] : 'paused'}</span>
+        <span class="dots" aria-label="{$pomodoro.cycle % $pomodoro.longEvery} of {$pomodoro.longEvery} sessions">
+          {#each Array($pomodoro.longEvery) as _, i}<span class:done={i < $pomodoro.cycle % $pomodoro.longEvery} />{/each}
+        </span>
+      {/if}
     </div>
   </div>
 
@@ -86,17 +95,19 @@
     </div>
   {/if}
 
-  <div class="task">
-    {#if open.length}
-      <select value={$activeTask?.id ?? ''} on:change={(e) => setActiveTask(e.currentTarget.value || null)} aria-label="Task to focus on">
-        <option value="">no task selected</option>
-        {#each open as t (t.id)}<option value={t.id}>{t.text}{t.pomodoros ? ` (${t.pomodoros})` : ''}</option>{/each}
-      </select>
-    {:else}
-      <button class="link" on:click={() => openWidget('todo')}>add a task to focus on</button>
-    {/if}
-  </div>
-  <p class="stats">today: {today.sessions} sessions · {today.minutes} min · space start/pause · r reset · s skip</p>
+  {#if !compact}
+    <div class="task">
+      {#if open.length}
+        <select value={$activeTask?.id ?? ''} on:change={(e) => setActiveTask(e.currentTarget.value || null)} aria-label="Task to focus on">
+          <option value="">no task selected</option>
+          {#each open as t (t.id)}<option value={t.id}>{t.text}{t.pomodoros ? ` (${t.pomodoros})` : ''}</option>{/each}
+        </select>
+      {:else}
+        <button class="link" on:click={() => openWidget('todo')}>add a task to focus on</button>
+      {/if}
+    </div>
+    <p class="stats">today: {today.sessions} sessions · {today.minutes} min · space start/pause · r reset · s skip</p>
+  {/if}
 </div>
 
 <style>
@@ -131,7 +142,7 @@
   .pomo :global(*:focus:not(:focus-visible)) {
     outline: none;
   }
-  .ring {
+  .dial {
     position: relative;
     flex-shrink: 0;
   }

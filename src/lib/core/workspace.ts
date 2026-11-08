@@ -24,12 +24,30 @@ export interface PaneSplit {
 
 export type PaneNode = PaneLeaf | PaneSplit;
 
-export interface WorkspaceState {
+/** The pane layout of one tab. */
+export interface TabData {
   root: PaneNode;
   /** Id of the template the layout came from (null once edited by hand is fine). */
   template: string | null;
   focused: string | null;
   maximized: string | null;
+}
+
+/**
+ * A tab (zellij calls them tabs; the UI calls them windows). The active tab's
+ * layout lives in the top-level fields of WorkspaceState, so every pane
+ * action works on it unchanged. Other tabs keep their layout in `data`.
+ */
+export interface TabEntry {
+  id: string;
+  name: string;
+  data?: TabData;
+}
+
+export interface WorkspaceState extends TabData {
+  tabs: TabEntry[];
+  /** Id of the active tab. Its entry in `tabs` has no `data`. */
+  active: string;
 }
 
 let counter = 0;
@@ -115,22 +133,53 @@ function isValidTree(node: unknown): node is PaneNode {
 
 const STORAGE_KEY = 'workspace:v1';
 
+/** Build a workspace around one tab. */
+function withTab(data: TabData, name = 'main', id = uid('t')): WorkspaceState {
+  return { ...data, tabs: [{ id, name }], active: id };
+}
+
 function defaultState(): WorkspaceState {
   const root = leaf('terminal', { startup: ['whoami', 'motd'] });
-  return { root, template: 'classic', focused: root.id, maximized: null };
+  return withTab({ root, template: 'classic', focused: root.id, maximized: null });
+}
+
+function isValidData(d: unknown): d is TabData {
+  return !!d && typeof d === 'object' && isValidTree((d as TabData).root);
 }
 
 function initialState(): WorkspaceState {
   const fromHash = readShareHash();
   if (fromHash) return fromHash;
-  const stored = load<WorkspaceState | null>(STORAGE_KEY, null);
+  const stored = load<Partial<WorkspaceState> | null>(STORAGE_KEY, null);
   if (stored && isValidTree(stored.root)) {
-    const root = normalize(stored.root);
+    const root = normalize(stored.root as PaneNode);
     for (const l of leaves(root)) l.config = l.config ?? {};
     const focused = stored.focused && findLeaf(root, stored.focused) ? stored.focused : leaves(root)[0].id;
-    return { root, template: stored.template ?? null, focused, maximized: null };
+    const active: TabData = { root, template: stored.template ?? null, focused, maximized: null };
+    // older saves have no tabs: they become the single tab
+    const saved = Array.isArray(stored.tabs) ? stored.tabs.filter((t) => t && typeof t.id === 'string' && typeof t.name === 'string') : [];
+    if (!saved.length || !stored.active) return withTab(active);
+    const tabs: TabEntry[] = saved.map((t) => ({ id: t.id, name: t.name, data: t.data && isValidData(t.data) ? hydrateData(t.data) : undefined }));
+    const activeId = tabs.some((t) => t.id === stored.active) ? (stored.active as string) : tabs[0].id;
+    const idx = tabs.findIndex((t) => t.id === activeId);
+    const current = tabs[idx];
+    tabs[idx] = { id: current.id, name: current.name };
+    return { ...active, tabs, active: activeId };
   }
   return defaultState();
+}
+
+/** Re-normalise a stored inactive tab's layout (same clean-up as the active one). */
+function hydrateData(d: TabData): TabData {
+  const root = normalize(d.root);
+  for (const l of leaves(root)) l.config = l.config ?? {};
+  const ids = leaves(root).map((l) => l.id);
+  return {
+    root,
+    template: d.template ?? null,
+    focused: d.focused && ids.includes(d.focused) ? d.focused : ids[0] ?? null,
+    maximized: null,
+  };
 }
 
 export const workspace = writable<WorkspaceState>(initialState());
@@ -247,7 +296,7 @@ export function setSizes(splitId: string, sizes: number[]) {
 /** Replace the whole layout (used by templates). */
 export function setLayout(root: PaneNode, template: string | null) {
   const fresh = cloneTree(root);
-  commit(() => ({ root: fresh, template, focused: leaves(fresh)[0].id, maximized: null }));
+  commit((s) => ({ ...s, root: fresh, template, focused: leaves(fresh)[0].id, maximized: null }));
 }
 
 /** Swap the positions of two panes. */
@@ -264,6 +313,71 @@ export function swapPanes(a: string, b: string) {
     })!;
     return { ...s, root };
   });
+}
+
+/* ------------------------------------------------------------------ tabs */
+
+const snapshot = (s: WorkspaceState): TabData => ({
+  root: s.root,
+  template: s.template,
+  focused: s.focused,
+  maximized: s.maximized,
+});
+
+/** Make another tab the active one. Its layout moves to the top level. */
+export function switchTab(id: string) {
+  workspace.update((s) => {
+    if (s.active === id || !s.tabs.some((t) => t.id === id)) return s;
+    const tabs = s.tabs.map((t) => {
+      if (t.id === s.active) return { id: t.id, name: t.name, data: snapshot(s) };
+      if (t.id === id) return { id: t.id, name: t.name };
+      return t;
+    });
+    const data = s.tabs.find((t) => t.id === id)?.data;
+    if (!data) return s;
+    return { ...s, ...data, tabs, active: id };
+  });
+}
+
+/** Open a new tab after the active one, with one terminal, and switch to it. */
+export function newTab(name?: string): string {
+  const id = uid('t');
+  const pane = leaf('terminal', { startup: ['motd'] });
+  workspace.update((s) => {
+    const tabs: TabEntry[] = s.tabs.map((t) => (t.id === s.active ? { id: t.id, name: t.name, data: snapshot(s) } : t));
+    const at = tabs.findIndex((t) => t.id === s.active) + 1;
+    tabs.splice(at, 0, { id, name: name?.trim() || `tab ${s.tabs.length + 1}` });
+    const data: TabData = { root: pane, template: null, focused: pane.id, maximized: null };
+    return { ...s, ...data, tabs, active: id };
+  });
+  return id;
+}
+
+/** Step to the next or previous tab, wrapping around. */
+export function stepTab(delta: 1 | -1) {
+  const s = get(workspace);
+  if (s.tabs.length < 2) return;
+  const i = s.tabs.findIndex((t) => t.id === s.active);
+  const next = s.tabs[(i + delta + s.tabs.length) % s.tabs.length];
+  switchTab(next.id);
+}
+
+export function renameTab(id: string, name: string) {
+  const clean = name.trim().slice(0, 40);
+  if (!clean) return;
+  workspace.update((s) => ({ ...s, tabs: s.tabs.map((t) => (t.id === id ? { ...t, name: clean } : t)) }));
+}
+
+/** Close a tab. The last tab cannot be closed. Returns false when refused. */
+export function closeTab(id: string): boolean {
+  const s = get(workspace);
+  if (s.tabs.length < 2 || !s.tabs.some((t) => t.id === id)) return false;
+  if (s.active === id) {
+    const i = s.tabs.findIndex((t) => t.id === id);
+    switchTab(s.tabs[i + 1 < s.tabs.length ? i + 1 : i - 1].id);
+  }
+  workspace.update((st) => ({ ...st, tabs: st.tabs.filter((t) => t.id !== id) }));
+  return true;
 }
 
 /* ------------------------------------------------------------ openWidget */
@@ -388,7 +502,7 @@ function readShareHash(): WorkspaceState | null {
     const root = normalize(unpack(data.r));
     if (!isValidTree(root)) return null;
     history.replaceState(null, '', location.pathname + location.search);
-    return { root, template: data.t ?? null, focused: leaves(root)[0].id, maximized: null };
+    return withTab({ root, template: data.t ?? null, focused: leaves(root)[0].id, maximized: null });
   } catch {
     return null;
   }
