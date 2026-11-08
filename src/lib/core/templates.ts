@@ -30,6 +30,12 @@ export const builtinTemplates: TemplateDef[] = [
     build: () => row([leaf('terminal', { startup: ['whoami'] }), leaf('terminal', { startup: ['help'] })], [0.55, 0.45]),
   },
   {
+    id: 'writer',
+    title: 'Writer',
+    description: 'Markdown notes with a terminal on the side.',
+    build: () => row([leaf('notes', { mode: 'split' }), leaf('terminal', { startup: ['notes ls'] })], [0.68, 0.32]),
+  },
+  {
     id: 'playground',
     title: 'Playground',
     description: 'The arcade next to a terminal.',
