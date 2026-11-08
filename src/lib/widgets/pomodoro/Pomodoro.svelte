@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Config } from '../../core/types';
-  import { activeTask, setActiveTask, tasks } from '../../core/tasks';
+  import { activeTask, formatSpent, setActiveTask, tasks } from '../../core/tasks';
   import { openWidget } from '../../core/workspace';
   import {
     fmt, MODE_LABEL, pomodoro, pomodoroStats, remainingMs, reset, setAutoStart, setDurations, setMode, skip, toggle, todayKey,
@@ -100,10 +100,13 @@
       {#if open.length}
         <select value={$activeTask?.id ?? ''} on:change={(e) => setActiveTask(e.currentTarget.value || null)} aria-label="Task to focus on">
           <option value="">no task selected</option>
-          {#each open as t (t.id)}<option value={t.id}>{t.text}{t.pomodoros ? ` (${t.pomodoros})` : ''}</option>{/each}
+          {#each open as t (t.id)}<option value={t.id}>{t.text}{t.pomodoros ? ` (${t.pomodoros})` : ''}{t.spentMs ? ` · ${formatSpent(t.spentMs)}` : ''}</option>{/each}
         </select>
       {:else}
         <button class="link" on:click={() => openWidget('todo')}>add a task to focus on</button>
+      {/if}
+      {#if $activeTask}
+        <span class="spent">{formatSpent($activeTask.spentMs)} on this task{$activeTask.pomodoros ? ` · ${$activeTask.pomodoros} pomodoros` : ''}</span>
       {/if}
     </div>
     <p class="stats">today: {today.sessions} sessions · {today.minutes} min · space start/pause · r reset · s skip</p>
@@ -260,6 +263,17 @@
     color: var(--t2);
     font: inherit;
     font-size: 12px;
+  }
+  .task {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .spent {
+    font-size: 11px;
+    color: var(--t1);
+    font-variant-numeric: tabular-nums;
   }
   .link {
     font-size: 12px;

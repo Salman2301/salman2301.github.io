@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Config } from '../../core/types';
-  import { activeTaskId, addTask, clearDone, removeTask, renameTask, setActiveTask, tasks, toggleTask } from '../../core/tasks';
+  import { activeTaskId, addTask, clearDone, formatSpent, isOverdue, removeTask, renameTask, setActiveTask, setDue, tasks, toggleTask } from '../../core/tasks';
+  import DatePicker from '../../ui/DatePicker.svelte';
 
   export let paneId: string;
   export let focused = false;
@@ -17,6 +18,8 @@
   let text = '';
   let editing: string | null = null;
   let editText = '';
+  /** The task whose due-date picker is open. */
+  let dueFor: string | null = null;
 
   $: list = $tasks.filter((t) => (filter === 'all' ? true : filter === 'done' ? t.done : !t.done));
   $: left = $tasks.filter((t) => !t.done).length;
@@ -86,6 +89,15 @@
           <span class="text" on:dblclick={() => startEdit(t.id, t.text)}>{t.text}</span>
         {/if}
         {#if t.pomodoros}<span class="count" title="{t.pomodoros} pomodoros">{t.pomodoros}p</span>{/if}
+        {#if t.spentMs}<span class="spent" title="focus time on this task">{formatSpent(t.spentMs)}</span>{/if}
+        <span class="due-wrap">
+          <button class="due" class:overdue={!t.done && isOverdue(t.due)} class:none={!t.due} data-picker-toggle title="Set a due date" on:click={() => (dueFor = dueFor === t.id ? null : t.id)}>{t.due ?? 'due'}</button>
+          {#if dueFor === t.id}
+            <div class="due-pop">
+              <DatePicker value={t.due ?? ''} withTime on:pick={(e) => { setDue(t.id, e.detail); dueFor = null; }} on:close={() => (dueFor = null)} />
+            </div>
+          {/if}
+        </span>
         <button class="act" class:on={$activeTaskId === t.id} title="Focus on this in the pomodoro (f)" on:click={() => setActiveTask($activeTaskId === t.id ? null : t.id)} disabled={t.done}>focus</button>
         <button class="act del" title="Delete" aria-label="Delete task" on:click={() => removeTask(t.id)}>x</button>
       </li>
@@ -178,6 +190,39 @@
   .count {
     font-size: 11px;
     color: var(--hl1);
+  }
+  .spent {
+    font-size: 11px;
+    color: var(--t1);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .due-wrap {
+    position: relative;
+    flex: 0 0 auto;
+  }
+  .due {
+    font-size: 11px;
+    padding: 0 6px;
+    border-radius: 4px;
+    color: var(--t1);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .due.none {
+    opacity: 0.5;
+  }
+  .due:hover {
+    color: var(--hl1);
+  }
+  .due.overdue {
+    color: #e5484d;
+  }
+  .due-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 60;
   }
   .act {
     font-size: 11px;

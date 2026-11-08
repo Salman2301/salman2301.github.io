@@ -11,8 +11,30 @@ export interface Task {
   done: boolean;
   /** Completed pomodoro focus sessions credited to this task. */
   pomodoros: number;
+  /** Focus time spent on this task while it was the pomodoro's active task, in ms. */
+  spentMs?: number;
+  /** Due date: "YYYY-MM-DD" or "YYYY-MM-DD HH:MM". */
+  due?: string;
   createdAt: number;
   doneAt?: number;
+}
+
+/** "1h 05m", "12m", "42s", or "0s" */
+export function formatSpent(ms: number | undefined): string {
+  const total = Math.floor((ms ?? 0) / 1000);
+  if (total < 60) return `${total}s`;
+  const mins = Math.floor(total / 60);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`;
+}
+
+/** Whether a due date has passed (a date alone counts as due at the end of that day). */
+export function isOverdue(due: string | undefined, now = new Date()): boolean {
+  if (!due) return false;
+  const [d, t] = due.split(' ');
+  const end = t ? new Date(`${d}T${t}:00`) : new Date(`${d}T23:59:59`);
+  return end.getTime() < now.getTime();
 }
 
 export const tasks = persisted<Task[]>('tasks:list', []);
@@ -62,6 +84,16 @@ export function creditPomodoro() {
   const id = get(activeTaskId);
   if (!id) return;
   tasks.update((list) => list.map((t) => (t.id === id ? { ...t, pomodoros: t.pomodoros + 1 } : t)));
+}
+
+/** Add focus time (ms) to a task. Called by the pomodoro while a focus session runs. */
+export function addSpent(id: string, ms: number) {
+  if (ms <= 0) return;
+  tasks.update((list) => list.map((t) => (t.id === id ? { ...t, spentMs: (t.spentMs ?? 0) + ms } : t)));
+}
+
+export function setDue(id: string, due: string | undefined) {
+  tasks.update((list) => list.map((t) => (t.id === id ? { ...t, due: due || undefined } : t)));
 }
 
 export function clearDone() {

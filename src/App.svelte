@@ -1,6 +1,6 @@
 <script lang="ts">
   import { get } from 'svelte/store';
-  import './lib/core/theme';
+  import { cycleTheme } from './lib/core/theme';
   import { overlays } from './lib/core/registry';
   import { templatePickerOpen } from './lib/core/ui';
   import {
@@ -33,7 +33,13 @@
       e.preventDefault();
       e.stopPropagation();
     };
+    // Inside a text field, Option+arrows move by word. Let those through.
+    if (e.key.startsWith('Arrow') && (e.target as HTMLElement)?.closest?.('textarea, input, [contenteditable="true"]')) return;
     switch (e.code) {
+      case 'KeyY':
+        handled();
+        cycleTheme(e.shiftKey);
+        return;
       case 'KeyT':
         handled();
         templatePickerOpen.update((v) => !v);
