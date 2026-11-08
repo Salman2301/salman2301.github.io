@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { load, save } from './storage';
 
 /**
@@ -79,4 +79,21 @@ export function setTheme(name: string): boolean {
   if (!(name in themes)) return false;
   themeStore.set(name as ThemeName);
   return true;
+}
+
+/**
+ * Move to the next theme, or a random one (never the current one).
+ * Alt+Y uses next, Alt+Shift+Y random.
+ */
+export function cycleTheme(random = false): ThemeName {
+  const current = get(themeStore);
+  let name: ThemeName;
+  if (random) {
+    const others = themeNames.filter((n) => n !== current);
+    name = others[Math.floor(Math.random() * others.length)];
+  } else {
+    name = themeNames[(themeNames.indexOf(current) + 1) % themeNames.length];
+  }
+  themeStore.set(name);
+  return name;
 }

@@ -39,6 +39,10 @@ Everything is saved in your browser's local storage. Nothing is sent to a server
 | `Alt+-` | split down |
 | `Alt+W` | close pane |
 | `Alt+M` | maximize / restore |
+| `Alt+N` | new tab (window) |
+| `Alt+[` / `Alt+]` | previous / next tab |
+| `Alt+Y` | next theme |
+| `Alt+Shift+Y` | random theme |
 | `Alt+Arrows` | move focus between panes |
 | `Alt+1..9` | focus pane by number |
 | `Tab`, `Up`/`Down`, `Ctrl+C`, `Ctrl+L` | terminal completion, history, stop, clear |

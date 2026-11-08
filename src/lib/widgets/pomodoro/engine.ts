@@ -2,7 +2,7 @@ import { derived, get, writable } from 'svelte/store';
 import { notify, requestNotificationPermission } from '../../core/notify';
 import { setStatus } from '../../core/status';
 import { persisted } from '../../core/storage';
-import { creditPomodoro } from '../../core/tasks';
+import { activeTaskId, addSpent, creditPomodoro } from '../../core/tasks';
 import { openWidget } from '../../core/workspace';
 
 /**
@@ -147,10 +147,21 @@ function advance(completed: boolean) {
 let interval: ReturnType<typeof setInterval> | undefined;
 let baseTitle = '';
 
+/** Last time we attributed focus time to the active task (0 = not running). */
+let lastTrack = 0;
+
+/** Give the time since the last tick to the active task, while a focus session runs. */
+function trackFocus(t: number, p: PomodoroState) {
+  const id = get(activeTaskId);
+  if (p.running && p.mode === 'focus' && id && lastTrack) addSpent(id, t - lastTrack);
+  lastTrack = p.running ? t : 0;
+}
+
 function tick() {
   const t = Date.now();
   now.set(t);
   const p = get(pomodoro);
+  trackFocus(t, p);
   if (p.running && p.endsAt && p.endsAt <= t) advance(true);
   render();
   if (!get(pomodoro).running && interval) {

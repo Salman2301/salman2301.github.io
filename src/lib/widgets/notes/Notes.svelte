@@ -3,6 +3,7 @@
   import type { Config } from '../../core/types';
   import { renderMarkdown, toggleTask } from './markdown';
   import { createNote, deleteNote, notes, sortNotes, timeAgo, titleOf, togglePin, updateNote } from './store';
+  import DatePicker from '../../ui/DatePicker.svelte';
 
   export let paneId: string;
   export let focused = false;
@@ -98,8 +99,84 @@
     textarea.setSelectionRange(a + offsetStart, b + offsetEnd);
   }
 
+  /**
+   * Enter on a list line starts the next item with the same syntax: "- ",
+   * "2. " (counted up) or "- [ ] " for task lines. Enter on an empty item
+   * ends the list instead. Returns true when it handled the key.
+   */
+  const LIST_LINE = /^(\s*)([-*+]|\d+[.)])(\s+)(\[[ xX]\]\s+)?(.*)$/;
+  async function continueList(e: KeyboardEvent): Promise<boolean> {
+    const pos = textarea.selectionStart;
+    if (pos !== textarea.selectionEnd) return false;
+    const lineStart = draft.lastIndexOf('\n', pos - 1) + 1;
+    const m = LIST_LINE.exec(draft.slice(lineStart, pos));
+    if (!m) return false;
+    const [, indent, marker, gap, box, rest] = m;
+    e.preventDefault();
+    if (!rest.trim()) {
+      // empty item: drop the marker and leave the list
+      draft = draft.slice(0, lineStart) + draft.slice(pos);
+      onEdit();
+      await tick();
+      textarea.setSelectionRange(lineStart, lineStart);
+      return true;
+    }
+    const num = /^(\d+)([.)])$/.exec(marker);
+    const next = num ? `${Number(num[1]) + 1}${num[2]}` : marker;
+    const insert = `\n${indent}${next}${gap}${box ? '[ ] ' : ''}`;
+    await replaceSelection(() => insert, insert.length, insert.length);
+    return true;
+  }
+
+  /* -------------------------------------------------------- date / time */
+
+  let pickerOpen = false;
+  let pickerTime = false;
+
+  /** Insert text at the caret, replacing any selection. */
+  async function insertAtCaret(text: string) {
+    const len = text.length;
+    const span = textarea.selectionEnd - textarea.selectionStart;
+    await replaceSelection(() => text, len, len - span);
+  }
+
+  function pickDate(e: CustomEvent<string>) {
+    pickerOpen = false;
+    if (e.detail) insertAtCaret(e.detail);
+    textarea?.focus();
+  }
+
+  function openPicker(withTime: boolean) {
+    pickerTime = withTime;
+    pickerOpen = !(pickerOpen && pickerTime === withTime);
+  }
+
+  /* ----------------------------------------------- split scroll sync */
+
+  let preview: HTMLElement;
+  // which pane the user is scrolling, so the other one does not echo it back
+  let scrollingFrom: 'edit' | 'preview' | null = null;
+  let scrollRelease = 0;
+
+  function syncScroll(from: 'edit' | 'preview') {
+    if (mode !== 'split' || scrollingFrom === (from === 'edit' ? 'preview' : 'edit')) return;
+    const src = from === 'edit' ? textarea : preview;
+    const dst = from === 'edit' ? preview : textarea;
+    if (!src || !dst) return;
+    scrollingFrom = from;
+    const room = src.scrollHeight - src.clientHeight;
+    const ratio = room > 0 ? src.scrollTop / room : 0;
+    dst.scrollTop = ratio * (dst.scrollHeight - dst.clientHeight);
+    cancelAnimationFrame(scrollRelease);
+    scrollRelease = requestAnimationFrame(() => (scrollingFrom = null));
+  }
+
   function onKeyDown(e: KeyboardEvent) {
     const mod = e.ctrlKey || e.metaKey;
+    if (e.key === 'Enter' && !mod && !e.shiftKey && !e.altKey) {
+      continueList(e);
+      return;
+    }
     if (e.key === 'Tab' && !mod && !e.altKey) {
       e.preventDefault();
       replaceSelection(() => '  ', 2, 2 - (textarea.selectionEnd - textarea.selectionStart));
@@ -200,6 +277,17 @@
           <button class:on={mode === m} on:click={() => setMode(m)}>{m}</button>
         {/each}
       </div>
+      {#if current && mode !== 'preview'}
+        <div class="date-wrap">
+          <button class="txt" data-picker-toggle title="Insert a date at the cursor" aria-expanded={pickerOpen && !pickerTime} on:click={() => openPicker(false)}>date</button>
+          <button class="txt" data-picker-toggle title="Insert a date and time at the cursor" aria-expanded={pickerOpen && pickerTime} on:click={() => openPicker(true)}>time</button>
+          {#if pickerOpen}
+            <div class="date-pop">
+              <DatePicker withTime={pickerTime} on:pick={pickDate} on:close={() => (pickerOpen = false)} />
+            </div>
+          {/if}
+        </div>
+      {/if}
       {#if current}
         <button class="txt" title="Pin to the top" on:click={() => togglePin(current.id)}>{current.pinned ? 'unpin' : 'pin'}</button>
         <button class="txt" title="Download as .md" on:click={exportNote}>export</button>
@@ -215,6 +303,7 @@
             bind:value={draft}
             on:input={onEdit}
             on:keydown={onKeyDown}
+            on:scroll={() => syncScroll('edit')}
             on:blur={flush}
             spellcheck="false"
             placeholder="# Title&#10;&#10;Write markdown here..."
@@ -223,7 +312,7 @@
         {/if}
         {#if mode !== 'edit'}
           <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-          <article class="md" on:click={onPreviewClick}>{@html html}</article>
+          <article class="md" bind:this={preview} on:scroll={() => syncScroll('preview')} on:click={onPreviewClick}>{@html html}</article>
         {/if}
       </div>
       <div class="foot">
@@ -464,6 +553,17 @@
     gap: 8px;
     text-align: center;
     color: var(--t1);
+  }
+  .date-wrap {
+    position: relative;
+    display: inline-flex;
+    gap: 2px;
+  }
+  .date-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 60;
   }
   .hidden {
     display: none;
