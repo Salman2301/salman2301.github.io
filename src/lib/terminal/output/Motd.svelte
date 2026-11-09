@@ -1,7 +1,10 @@
 <script lang="ts">
   import { getContext } from 'svelte';
   import { TERMINAL_CTX, type TerminalContext } from '../context';
+  import { isTouch } from '../../core/device';
   import { templatePickerOpen } from '../../core/ui';
+
+  const touch = isTouch();
 
   const term = getContext<TerminalContext>(TERMINAL_CTX);
 
@@ -28,10 +31,17 @@
       <button on:click={() => (c.action ? c.action() : term?.run(c.run ?? c.label))}>{c.label}</button>
     {/each}
   </div>
-  <p class="keys">
-    <kbd>alt</kbd>+<kbd>t</kbd> templates · <kbd>alt</kbd>+<kbd>\</kbd> split ·
-    <kbd>alt</kbd>+<kbd>arrows</kbd> move focus · <kbd>tab</kbd> completes
-  </p>
+  {#if touch}
+    <p class="keys">
+      swipe left or right to move between panes · <kbd>+</kbd> opens widgets and more · the key row under the prompt has
+      <kbd>tab</kbd> and <kbd>↑</kbd>
+    </p>
+  {:else}
+    <p class="keys">
+      <kbd>alt</kbd>+<kbd>t</kbd> templates · <kbd>alt</kbd>+<kbd>\</kbd> split ·
+      <kbd>alt</kbd>+<kbd>arrows</kbd> move focus · <kbd>tab</kbd> completes
+    </p>
+  {/if}
 </div>
 
 <style>

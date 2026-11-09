@@ -125,6 +125,18 @@ export const SHORTCUTS: ShortcutGroup[] = [
     ],
   },
   {
+    title: 'On a phone',
+    where: 'one pane per screen',
+    items: [
+      { keys: [['swipe ←'], ['swipe →']], does: 'next / previous pane' },
+      { keys: [['pane chips']], does: 'tap a chip in the bottom bar to jump to that pane' },
+      { keys: [['+']], does: 'open any widget, plus templates, themes, tabs and the other Alt shortcuts as buttons' },
+      { keys: [['⌕']], does: 'search' },
+      { keys: [['key row']], does: 'under the terminal prompt: tab, ↑ ↓ →, esc, ^C, ^L, ^U' },
+      { keys: [['drag']], does: 'inside a pane scrolls that pane; the page itself never scrolls' },
+    ],
+  },
+  {
     title: 'Games',
     items: [
       { keys: [['WASD'], ['arrows']], does: 'move' },

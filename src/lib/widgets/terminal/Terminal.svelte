@@ -19,6 +19,7 @@
 </script>
 
 <script lang="ts">
+  import { isTouch } from '../../core/device';
   import { onDestroy, onMount, setContext, tick } from 'svelte';
   import { commandHelp, getCommand, commandNames } from '../../core/registry';
   import type { Config } from '../../core/types';
@@ -121,8 +122,32 @@
     }
   }
 
-  function focusInput() {
+  /** A touch device: the prompt is only focused by a tap (focusing it opens the keyboard). */
+  const touch = isTouch();
+
+  function focusInput(byUser = false) {
+    if (touch && byUser !== true) return;
     input?.focus({ preventScroll: true });
+  }
+
+  /**
+   * The key row on touch screens sends the keys a phone keyboard lacks (Tab,
+   * arrows, Ctrl+C, ...) through the same handler as a real key press.
+   */
+  const TOUCH_KEYS: { label: string; key: string; ctrl?: boolean; title: string }[] = [
+    { label: 'tab', key: 'Tab', title: 'Complete' },
+    { label: '↑', key: 'ArrowUp', title: 'Previous command' },
+    { label: '↓', key: 'ArrowDown', title: 'Next command' },
+    { label: '→', key: 'ArrowRight', title: 'Accept the suggestion' },
+    { label: 'esc', key: 'Escape', title: 'Close the list' },
+    { label: '^C', key: 'c', ctrl: true, title: 'Stop the command' },
+    { label: '^L', key: 'l', ctrl: true, title: 'Clear the screen' },
+    { label: '^U', key: 'u', ctrl: true, title: 'Clear the line' },
+  ];
+
+  function touchKey(k: (typeof TOUCH_KEYS)[number]) {
+    onKeyDown(new KeyboardEvent('keydown', { key: k.key, ctrlKey: !!k.ctrl, cancelable: true }));
+    void scrollSoon();
   }
 
   const ctx: TerminalContext = {
@@ -133,7 +158,7 @@
       await execute(line);
     },
     print,
-    focusInput,
+    focusInput: () => focusInput(),
   };
   setContext(TERMINAL_CTX, ctx);
 
@@ -293,20 +318,36 @@
     if (window.getSelection()?.toString()) return;
     // fields inside command output keep their focus
     if ((e.target as HTMLElement | null)?.closest?.('.block input, .block textarea, .block select')) return;
-    focusInput();
+    focusInput(true);
   }
 
   /* ----------------------------------------------------------- lifecycle */
 
   let wasFocused = false;
   $: {
-    if (focused && !wasFocused) tick().then(focusInput);
+    if (focused && !wasFocused) tick().then(() => focusInput());
     wasFocused = focused;
+  }
+
+  /**
+   * When the pane changes height (the on-screen keyboard opens, a split is
+   * dragged), a terminal that was showing its last line keeps showing it.
+   */
+  let atBottom = true;
+  let resizeWatch: ResizeObserver | undefined;
+  function onScroll() {
+    atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 48;
   }
 
   onMount(async () => {
     terminals.set(paneId, ctx);
     scrollSoon();
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeWatch = new ResizeObserver(() => {
+        if (atBottom && scroller) scroller.scrollTop = scroller.scrollHeight;
+      });
+      resizeWatch.observe(scroller);
+    }
     if (!session.started) {
       session.started = true;
       const startup = Array.isArray(config.startup) ? (config.startup as string[]) : [];
@@ -316,6 +357,7 @@
   });
 
   onDestroy(() => {
+    resizeWatch?.disconnect();
     controller?.abort();
     if (terminals.get(paneId) === ctx) terminals.delete(paneId);
   });
@@ -337,7 +379,8 @@
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
-<div class="terminal" bind:this={scroller} on:click={onSurfaceClick}>
+<div class="wrap">
+<div class="terminal" bind:this={scroller} on:click={onSurfaceClick} on:scroll={onScroll}>
   {#each entries as entry (entry.id)}
     {#if entry.kind === 'echo'}
       <div class="line echo">
@@ -383,19 +426,63 @@
       {/if}
     </div>
   </div>
-  {#if busy}<div class="line tone-muted hint">running... press Ctrl+C to stop</div>{/if}
+  {#if busy}<div class="line tone-muted hint">running... {touch ? 'tap ^C to stop' : 'press Ctrl+C to stop'}</div>{/if}
+</div>
+{#if touch}
+  <div class="keys" role="toolbar" aria-label="Terminal keys">
+    {#each TOUCH_KEYS as k (k.label)}
+      <!-- mousedown is cancelled so the prompt keeps its focus and the keyboard stays open -->
+      <button type="button" tabindex="-1" title={k.title} aria-label={k.title} on:mousedown|preventDefault on:click={() => touchKey(k)}>{k.label}</button>
+    {/each}
+  </div>
+{/if}
 </div>
 
 <style>
-  .terminal {
+  .wrap {
+    display: flex;
+    flex-direction: column;
     height: 100%;
+    min-height: 0;
+  }
+  .keys {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    padding: 6px 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-top: 1px solid color-mix(in srgb, var(--bg2) 80%, transparent);
+    background: color-mix(in srgb, var(--bg2) 18%, var(--bg1));
+  }
+  .keys::-webkit-scrollbar {
+    display: none;
+  }
+  .keys button {
+    flex: 1 0 auto;
+    min-width: 40px;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--bg2);
+    border-radius: 8px;
+    color: var(--t2);
+    font-size: 13px;
+    touch-action: manipulation;
+  }
+  .keys button:active {
+    border-color: var(--hl1);
+    color: var(--hl1);
+  }
+  .terminal {
+    flex: 1;
+    min-height: 0;
     overflow: auto;
     padding: 10px 14px 18px;
     color: var(--t2);
     font-size: 14px;
     line-height: 1.5;
     cursor: text;
-    overscroll-behavior: contain;
+    overscroll-behavior-y: contain; /* only up and down: a sideways swipe still moves between panes on a phone */
   }
   .line {
     white-space: pre-wrap;

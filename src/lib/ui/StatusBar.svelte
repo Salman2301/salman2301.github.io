@@ -203,6 +203,12 @@
     color: var(--t2);
   }
   @media (max-width: 720px) {
+    /* while typing on a phone, leave the room to the pane (see core/device.ts) */
+    :global(html.typing) .statusbar {
+      display: none;
+    }
+    /* templates and panes live in the dock and its + menu on a phone */
+    .brand,
     .windows,
     .theme-label,
     .mode-label,

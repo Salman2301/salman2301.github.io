@@ -1,6 +1,7 @@
 <svelte:options immutable={true} />
 
 <script lang="ts">
+  import { isMobile } from '../core/device';
   import { getWidget, widgets } from '../core/registry';
   import type { Config } from '../core/types';
   import {
@@ -86,7 +87,7 @@
   on:dragleave={() => (dragOver = false)}
   on:drop={onDrop}
 >
-  <header draggable="true" on:dragstart={onDragStart} on:dblclick={() => toggleMaximize(pane.id)}>
+  <header draggable={!$isMobile} on:dragstart={onDragStart} on:dblclick={() => !$isMobile && toggleMaximize(pane.id)}>
     <span class="index">{index}</span>
     <div class="title-wrap" use:clickOutside>
       <button class="title" on:click={() => (menuOpen = !menuOpen)} title="Change widget" aria-haspopup="menu" aria-expanded={menuOpen}>
@@ -324,6 +325,14 @@
     cursor: default;
   }
   @media (max-width: 720px) {
+    /* Every pane already fills the screen on a phone. */
+    .frame.maximized {
+      position: relative;
+      inset: auto;
+      z-index: auto;
+      width: 100%;
+      height: 100%;
+    }
     /* Touch has no hover, so the header actions are always visible and easier to hit. */
     header {
       height: 36px;
@@ -342,9 +351,6 @@
     }
     .actions button:not(.close) {
       display: none;
-    }
-    .actions button:nth-child(3) {
-      display: grid;
     }
     /* Stay inside a narrow screen: never wider than the pane's right edge. */
     .menu {

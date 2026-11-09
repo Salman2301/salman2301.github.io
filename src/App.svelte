@@ -5,6 +5,7 @@
   import { stepStation, toggleRadio } from './lib/widgets/radio/player';
   import { onMount } from 'svelte';
   import { startReminders } from './lib/core/reminders';
+  import { isMobile, startViewport } from './lib/core/device';
   import { startScreensaver } from './lib/core/screensaver';
   import { cycleThemeHere } from './lib/core/spaces';
   import { startScreenTime } from './lib/core/screentime';
@@ -22,6 +23,8 @@
     toggleMaximize,
     workspace,
   } from './lib/core/workspace';
+  import MobileDock from './lib/ui/MobileDock.svelte';
+  import MobilePanes from './lib/ui/MobilePanes.svelte';
   import PaneTree from './lib/ui/PaneTree.svelte';
   import StatusBar from './lib/ui/StatusBar.svelte';
   import TabBar from './lib/ui/TabBar.svelte';
@@ -123,6 +126,7 @@
   }
 
   onMount(() => {
+    startViewport();
     startReminders();
     startScreenTime();
     startPwa();
@@ -136,9 +140,15 @@
   <TabBar />
   <main class="workspace">
     {#key $workspace.active}
-      <PaneTree node={$workspace.root} />
+      {#if $isMobile}
+        <!-- phones: one pane per screen, swipe between them -->
+        <MobilePanes />
+      {:else}
+        <PaneTree node={$workspace.root} />
+      {/if}
     {/key}
   </main>
+  {#if $isMobile}<MobileDock />{/if}
   <StatusBar />
 </div>
 
@@ -165,18 +175,17 @@
     padding: 6px;
   }
   @media (max-width: 720px) {
+    /* As tall as the visible screen (it shrinks when the keyboard opens); the page itself never scrolls. */
     .app {
-      height: auto;
-      min-height: 100dvh;
-      overflow: visible;
+      position: fixed;
+      inset: 0 0 auto 0;
+      height: var(--vvh, 100dvh);
+      box-sizing: border-box;
+      /* notches and the home bar, when installed as an app */
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     }
     .workspace {
-      display: block;
-      padding: 4px;
-    }
-    .app :global(.statusbar) {
-      position: sticky;
-      bottom: 0;
+      padding: 0;
     }
   }
 </style>

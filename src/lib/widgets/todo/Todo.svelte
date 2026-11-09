@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isTouch } from '../../core/device';
   import { tick } from 'svelte';
   import type { Config } from '../../core/types';
   import {
@@ -250,7 +251,7 @@
 
   let wasFocused = false;
   $: {
-    if (focused && !wasFocused) tick().then(() => input?.focus({ preventScroll: true }));
+    if (focused && !wasFocused && !isTouch()) tick().then(() => input?.focus({ preventScroll: true }));
     wasFocused = focused;
   }
 </script>

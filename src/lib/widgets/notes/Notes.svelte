@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isTouch } from '../../core/device';
   import { onDestroy, onMount, tick } from 'svelte';
   import type { Config } from '../../core/types';
   import { renderMarkdown, toggleTask } from './markdown';
@@ -436,7 +437,7 @@
 
   let wasFocused = false;
   $: {
-    if (focused && !wasFocused) tick().then(() => editor?.focus());
+    if (focused && !wasFocused && !isTouch()) tick().then(() => editor?.focus());
     wasFocused = focused;
   }
 
@@ -1007,14 +1008,21 @@
   }
 
   @media (max-width: 720px) {
-    /* Let the toolbar wrap instead of clipping pin / export / delete off the edge. */
+    /* One row that scrolls sideways, so pin / export / delete stay reachable without wrapping. */
     .bar {
-      flex-wrap: wrap;
-      white-space: normal;
-      row-gap: 6px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      overscroll-behavior-x: contain;
     }
+    .bar::-webkit-scrollbar {
+      display: none;
+    }
+    .bar > :global(*) {
+      flex: 0 0 auto;
+    }
+    /* the pane header already shows the note's title */
     .title {
-      flex: 1 1 0;
+      display: none;
     }
     .bar .txt {
       min-height: 28px;
