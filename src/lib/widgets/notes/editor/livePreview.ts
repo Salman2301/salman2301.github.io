@@ -120,7 +120,7 @@ const mark = (cls: string, attributes?: Record<string, string>) => Decoration.ma
 const line = (cls: string) => Decoration.line({ class: cls });
 
 /** Lines that show their source: those touched by the selection, while focused. */
-function activeLines(view: EditorView): Set<number> {
+export function activeLines(view: EditorView): Set<number> {
   const out = new Set<number>();
   if (!view.hasFocus) return out;
   const { doc, selection } = view.state;

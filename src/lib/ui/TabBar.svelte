@@ -1,6 +1,12 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { closeTab, newTab, renameTab, switchTab, workspace } from '../core/workspace';
+  import { projects } from '../core/tasks';
+  import { isThemeName, themes, themeStore } from '../core/theme';
+
+  /** The space a tab is pinned to, if any, for the little marker on the tab. */
+  $: spaceOf = (id?: string) => (id ? $projects.find((p) => p.id === id) ?? null : null);
+  const accent = (theme: string | undefined) => (isThemeName(theme) ? themes[theme][2] : themes[$themeStore][2]);
 
   let editing: string | null = null;
   let draft = '';
@@ -34,6 +40,11 @@
       {:else}
         <button class="name" on:click={() => switchTab(t.id)} on:dblclick={() => rename(t.id, t.name)} title="Double-click to rename (Alt+[ / Alt+])">
           <span class="num">{i + 1}</span>{t.name}
+          {#if spaceOf(t.space)}
+            <span class="space" title="Pinned to the space {spaceOf(t.space)?.name}">
+              <span class="sdot" style="background:{accent(spaceOf(t.space)?.theme)}" />{spaceOf(t.space)?.name}
+            </span>
+          {/if}
         </button>
       {/if}
       {#if $workspace.tabs.length > 1}
@@ -141,5 +152,21 @@
       top: 0;
       z-index: 30;
     }
+  }
+  .space {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg2) 50%, transparent);
+    color: var(--t1);
+    font-size: 10px;
+  }
+  .sdot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
   }
 </style>

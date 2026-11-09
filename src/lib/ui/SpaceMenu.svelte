@@ -77,7 +77,7 @@
     class:filtered={$activeSpace !== ALL}
     aria-haspopup="menu"
     aria-expanded={open}
-    title="Space: {$currentSpace?.name ?? 'all spaces'}. Filters tasks, notes and reminders."
+    title="This tab's space: {$currentSpace?.name ?? 'all spaces'}. Filters its tasks, notes and reminders; other tabs keep their own."
     on:click={() => (open = !open)}
   >
     <span class="dot" style="background:{accentOf($currentSpace?.theme)}" />
@@ -86,6 +86,7 @@
 
   {#if open}
     <div class="menu" role="menu" aria-label="Spaces">
+      <p class="head">space for this tab</p>
       <button class="row all" class:on={$activeSpace === ALL} role="menuitemradio" aria-checked={$activeSpace === ALL} on:click={() => pick(ALL)}>
         <span class="radio" />
         <span class="label">All spaces</span>
@@ -211,6 +212,13 @@
     font-size: 12px;
     white-space: normal;
     box-shadow: 0 16px 40px -14px color-mix(in srgb, var(--bg2) 80%, transparent);
+  }
+  .head {
+    margin: 2px 6px 4px;
+    color: var(--t1);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
   .row {
     display: flex;

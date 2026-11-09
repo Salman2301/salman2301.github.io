@@ -1,17 +1,21 @@
 import type { CommandDef } from '../core/types';
 import { openWidget } from '../core/workspace';
 import { findStation, STATIONS } from '../widgets/radio/stations';
-import { pause, tune } from '../widgets/radio/player';
+import { pause, stepStation, tune } from '../widgets/radio/player';
 
 const command: CommandDef = {
   name: 'radio',
   description: 'tune in to a free live radio station, or stop the radio',
-  usage: 'radio [<station>|list|stop]',
+  usage: 'radio [<station>|next|prev|list|stop]',
   group: 'widgets',
-  complete: (args) => (args.length <= 1 ? [...STATIONS.map((s) => s.slug), 'list', 'stop'] : []),
+  complete: (args) => (args.length <= 1 ? [...STATIONS.map((s) => s.slug), 'next', 'prev', 'list', 'stop'] : []),
   run: (ctx) => {
     const word = ctx.args.join(' ').trim().toLowerCase();
     if (!word) return void openWidget('radio', undefined, { from: ctx.paneId });
+    if (word === 'next' || word === 'prev' || word === 'previous') {
+      const st = stepStation(word === 'next' ? 1 : -1);
+      return ctx.print(`tuning in to ${st.name}`, 'success');
+    }
     if (word === 'stop' || word === 'pause') {
       pause();
       return ctx.print('radio stopped', 'muted');

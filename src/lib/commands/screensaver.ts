@@ -5,7 +5,7 @@ import type { CommandDef } from '../core/types';
 const command: CommandDef = {
   name: 'screensaver',
   aliases: ['saver', 'ss'],
-  description: 'full-screen animation in your theme (alt+s): matrix, stars, pipes, bounce; idle <minutes>',
+  description: 'animation in your theme over this pane (alt+s): matrix, stars, pipes, bounce; idle <minutes>',
   usage: 'screensaver [matrix|stars|pipes|bounce|random|list|idle <minutes>|idle off]',
   group: 'fun',
   complete: (args) => (args.length <= 1 ? [...SAVERS.map((s) => s.id), 'random', 'list', 'idle'] : args[0] === 'idle' ? ['off', '5', '10', '15', '30'] : []),
@@ -29,7 +29,7 @@ const command: CommandDef = {
       return ctx.print(`no screensaver "${sub}". Try: ${SAVERS.map((s) => s.id).join(', ')}, random`, 'error');
     }
     if (isSaverId(sub)) saverPrefs.update((p) => ({ ...p, id: sub }));
-    startScreensaver(sub === 'random' ? 'random' : isSaverId(sub) ? sub : undefined);
+    startScreensaver(sub === 'random' ? 'random' : isSaverId(sub) ? sub : undefined, undefined, ctx.paneId);
   },
 };
 

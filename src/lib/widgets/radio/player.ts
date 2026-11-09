@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { persisted } from '../../core/storage';
-import { DEFAULT_STATION, findStation, type Station } from './stations';
+import { DEFAULT_STATION, findStation, STATIONS, type Station } from './stations';
 
 /**
  * The one radio player on the page. The Radio pane, the status bar control
@@ -84,6 +84,14 @@ function connect(station: Station) {
 export function tune(station: Station) {
   radioPrefs.update((p) => ({ ...p, slug: station.slug }));
   connect(station);
+}
+
+/** Tune to the next (1) or previous (-1) station, wrapping around, and play it. Returns it. */
+export function stepStation(dir: 1 | -1): Station {
+  const i = Math.max(0, STATIONS.findIndex((s) => s.slug === get(radioState).station.slug));
+  const next = STATIONS[(i + dir + STATIONS.length) % STATIONS.length];
+  tune(next);
+  return next;
 }
 
 /** Play the current station. */

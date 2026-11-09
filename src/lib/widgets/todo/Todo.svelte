@@ -6,6 +6,7 @@
     addProject,
     addTask,
     addTaskLines,
+    moveTask,
     clearDone,
     formatSpent,
     INBOX_ID,
@@ -16,10 +17,7 @@
     renameProject,
     renameTask,
     revealTaskId,
-    setActiveTask,
     setDue,
-    setProjectNotes,
-    setProjectTheme,
     setTaskNotes,
     tasks,
     toggleTask,
@@ -27,10 +25,10 @@
   } from '../../core/tasks';
   import { friendlyDate } from '../../core/dates';
   import { activeSpace, ALL, deleteSpace, setActiveSpace } from '../../core/spaces';
-  import { darkThemes, lightThemes } from '../../core/theme';
   import { linksIn, openMention, segments } from '../../core/mentions';
   import type { Note } from '../../widgets/notes/store';
   import DatePicker from '../../ui/DatePicker.svelte';
+  import { focusOn } from '../pomodoro/engine';
   import { mention } from '../../ui/mention';
   import { notes } from '../../widgets/notes/store';
 
@@ -72,7 +70,6 @@
   let newProjectName = '';
   let renamingProject = false;
   let projectName = '';
-  let projectNotesOpen = false;
 
   function createProject() {
     const p = addProject(newProjectName);
@@ -209,9 +206,13 @@
       removeTask(id);
       tick().then(() => (items[index + 1] ?? items[index - 1] ?? input)?.focus());
     } else if (e.key === 'Enter') startEdit(id, $tasks.find((t) => t.id === id)?.text ?? '');
-    else if (e.key === 'f') setActiveTask($activeTaskId === id ? null : id);
+    else if (e.key === 'f') focusOn(id);
     else if (e.key === 'n') notesFor = notesFor === id ? null : id;
     else if (e.key === 's' && !$tasks.find((t) => t.id === id)?.parentId) openSub(id);
+    else if (e.key === 'm') {
+      e.preventDefault();
+      (document.querySelector(`select[data-move="${id}"]`) as HTMLSelectElement | null)?.focus();
+    }
   }
 
   function onInputKey(e: KeyboardEvent) {
@@ -289,42 +290,11 @@
     {/if}
     <span class="pleft">{left} left</span>
     <span class="spacer" />
-    <button class:on={projectNotesOpen || !!project.notes} title="Notes for this space" on:click={() => (projectNotesOpen = !projectNotesOpen)}>notes</button>
-    <select
-      class="ptheme"
-      value={project.theme ?? ''}
-      on:change={(e) => setProjectTheme(project.id, e.currentTarget.value || null)}
-      title="Theme while this space is active"
-      aria-label="Space theme"
-    >
-      <option value="">default theme</option>
-      <optgroup label="dark">{#each darkThemes as name}<option value={name}>{name}</option>{/each}</optgroup>
-      <optgroup label="light">{#each lightThemes as name}<option value={name}>{name}</option>{/each}</optgroup>
-    </select>
     <button on:click={startRenameProject} title="Rename space">rename</button>
     {#if project.id !== INBOX_ID}
       <button class="del" on:click={deleteProject} title="Delete space (its tasks and notes move to the Inbox)">delete</button>
     {/if}
   </header>
-
-  {#if projectNotesOpen}
-    <textarea
-      class="notes project-notes"
-      use:mention={'note'}
-      value={project.notes}
-      on:input={(e) => setProjectNotes(project.id, e.currentTarget.value)}
-      placeholder="notes for {project.name}. @ links a note"
-      aria-label="Space notes"
-      spellcheck="false"
-    />
-    {#if linksOf(project.notes, $notes, $tasks).length}
-      <div class="links">
-        {#each linksOf(project.notes, $notes, $tasks) as l (l.id)}
-          <button class="ref" class:missing={l.kind === 'note' && l.missing} on:click={() => openMention(l.kind, l.id)}>{l.label}</button>
-        {/each}
-      </div>
-    {/if}
-  {/if}
 
   <form on:submit|preventDefault={add}>
     <input bind:this={input} use:mention={'note'} bind:value={text} on:keydown={onInputKey} on:paste={(e) => onPaste(e)} placeholder="add a task to {project.name}. @tmrw sets a reminder, @ links a note" maxlength="200" aria-label="New task" spellcheck="false" />
@@ -359,11 +329,23 @@
           {/if}
         </span>
         <span class="gap" />
+        {#if $projects.length > 1}
+          <select
+            class="act move"
+            data-move={t.id}
+            value={projectOf(t)}
+            on:change={(e) => moveTask(t.id, e.currentTarget.value)}
+            title={t.parentId ? 'Move to another space (leaves its parent task) (m)' : 'Move to another space, with its sub-tasks (m)'}
+            aria-label="Move to space"
+          >
+            {#each $projects as p (p.id)}<option value={p.id}>{p.id === projectOf(t) ? `in ${p.name}` : `→ ${p.name}`}</option>{/each}
+          </select>
+        {/if}
         <button class="act" class:on={!!t.notes} title="Notes (n)" aria-label="Notes" on:click={() => (notesFor = notesFor === t.id ? null : t.id)}>≡</button>
         {#if depth === 0}
           <button class="act" title="Add a sub-task (s)" aria-label="Add sub-task" on:click={() => openSub(t.id)} disabled={t.done}>+</button>
         {/if}
-        <button class="act" class:on={$activeTaskId === t.id} title="Focus on this in the pomodoro (f)" on:click={() => setActiveTask($activeTaskId === t.id ? null : t.id)} disabled={t.done}>focus</button>
+        <button class="act" class:on={$activeTaskId === t.id} title={$activeTaskId === t.id ? 'Stop focusing and pause the pomodoro (f)' : 'Focus on this: starts the pomodoro (f)'} on:click={() => focusOn(t.id)} disabled={t.done}>focus</button>
         <button class="act del" title="Delete" aria-label="Delete task" on:click={() => removeTask(t.id)}>x</button>
         </div>
       </li>
@@ -478,8 +460,7 @@
     border-radius: 4px;
     color: var(--t1);
   }
-  .phead button:hover,
-  .phead button.on {
+  .phead button:hover {
     color: var(--hl1);
   }
   .phead .del:hover {
@@ -514,19 +495,6 @@
   }
   .notes:focus {
     border-color: var(--hl1);
-  }
-  .ptheme {
-    max-width: 120px;
-    padding: 0 4px;
-    border: 1px solid var(--bg2);
-    border-radius: 4px;
-    background: var(--bg1);
-    color: var(--t1);
-    font: inherit;
-    font-size: 11px;
-  }
-  .project-notes {
-    margin-bottom: 0;
   }
   form {
     padding: 8px 10px 6px;
@@ -750,6 +718,21 @@
   .act.on,
   .act:hover {
     color: var(--hl1);
+  }
+  /* the space picker sits with the other row actions */
+  .act.move {
+    max-width: 96px;
+    padding: 0 2px;
+    border: 1px solid transparent;
+    background: transparent;
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .act.move:hover,
+  .act.move:focus {
+    border-color: var(--bg2);
+    opacity: 1;
   }
   .act:disabled {
     visibility: hidden;

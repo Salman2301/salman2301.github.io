@@ -4,7 +4,7 @@ import { mix, type Palette } from '../../games/kit';
 import { Rain } from '../../widgets/matrix/rain';
 
 /**
- * The screensavers. Each one draws on a full-screen canvas with nothing but
+ * The screensavers. Each one draws on a pane-sized canvas with nothing but
  * the theme's five colours (and blends of them), and takes a new palette
  * live when the theme changes.
  */
@@ -14,7 +14,8 @@ export interface Running {
   stop(): void;
 }
 
-type Start = (canvas: HTMLCanvasElement, p: Palette, reduced: boolean) => Running;
+/** Start a saver on `canvas`, `w` x `h` CSS pixels (the pane). */
+type Start = (canvas: HTMLCanvasElement, p: Palette, reduced: boolean, w: number, h: number) => Running;
 
 /** A requestAnimationFrame loop with the frame time in seconds (capped after a pause). */
 function loop(frame: (dt: number) => void): () => void {
@@ -47,11 +48,11 @@ const shades = (p: Palette) => [p.hl1, p.t2, mix(p.hl1, p.t2, 0.5), p.t1, mix(p.
 
 /* -------------------------------------------------------------- matrix */
 
-const matrix: Start = (canvas, p, reduced) => {
+const matrix: Start = (canvas, p, reduced, w0, h0) => {
   const rain = new Rain(canvas);
   rain.setReducedMotion(reduced);
   rain.setPalette(p);
-  rain.resize(window.innerWidth, window.innerHeight);
+  rain.resize(w0, h0);
   rain.play();
   return {
     resize: (w, h) => rain.resize(w, h),
@@ -62,10 +63,10 @@ const matrix: Start = (canvas, p, reduced) => {
 
 /* --------------------------------------------------------------- stars */
 
-const stars: Start = (canvas, p, reduced) => {
+const stars: Start = (canvas, p, reduced, w0, h0) => {
   let pal = p;
-  let w = window.innerWidth;
-  let h = window.innerHeight;
+  let w = w0;
+  let h = h0;
   let ctx = context(canvas, w, h);
   const N = 520;
   const sx = new Float32Array(N);
@@ -126,10 +127,10 @@ const stars: Start = (canvas, p, reduced) => {
 
 /* --------------------------------------------------------------- pipes */
 
-const pipes: Start = (canvas, p, reduced) => {
+const pipes: Start = (canvas, p, reduced, w0, h0) => {
   let pal = p;
-  let w = window.innerWidth;
-  let h = window.innerHeight;
+  let w = w0;
+  let h = h0;
   let ctx = context(canvas, w, h);
   const CELL = 26;
   const DIRS = [
@@ -221,10 +222,10 @@ const pipes: Start = (canvas, p, reduced) => {
 
 /* -------------------------------------------------------------- bounce */
 
-const bounce: Start = (canvas, p, reduced) => {
+const bounce: Start = (canvas, p, reduced, w0, h0) => {
   let pal = p;
-  let w = window.innerWidth;
-  let h = window.innerHeight;
+  let w = w0;
+  let h = h0;
   let ctx = context(canvas, w, h);
   const S = new Path2D(S_PATH);
   const size = () => Math.max(90, Math.min(180, Math.min(w, h) * 0.22));

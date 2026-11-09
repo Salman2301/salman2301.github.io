@@ -6,6 +6,7 @@
   import { Compartment, EditorState } from '@codemirror/state';
   import { drawSelection, EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view';
   import { editorTheme, livePreview, markdownHighlight, mentionCompletion, refreshChips, wrapWith } from './livePreview';
+  import { accordions, selectionTools, toolbarTheme } from './toolbar';
 
   /**
    * The notes editor (CodeMirror 6). Live preview renders markdown in place
@@ -39,7 +40,8 @@
         // HTML / CSS / JS parsers markdown() brings, which notes do not need.
         new LanguageSupport(markdownLanguage),
         markdownHighlight,
-        mode.of(live ? livePreview() : []),
+        mode.of(live ? [livePreview(), accordions(true)] : accordions(false)),
+        selectionTools(),
         mentionCompletion((action, pos) => onAction(action, pos)),
         keymap.of([
           { key: 'Mod-b', run: wrapWith('**') },
@@ -60,6 +62,7 @@
         EditorView.contentAttributes.of({ 'aria-label': 'Note editor', spellcheck: 'false' }),
         cmPlaceholder(placeholder),
         editorTheme,
+        toolbarTheme,
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onChange(u.state.doc.toString());
           if (u.focusChanged && !u.view.hasFocus) onBlur();
@@ -80,7 +83,7 @@
     loadedKey = docKey;
     view.setState(createState(value));
   }
-  $: view?.dispatch({ effects: mode.reconfigure(live ? livePreview() : []) });
+  $: view?.dispatch({ effects: mode.reconfigure(live ? [livePreview(), accordions(true)] : accordions(false)) });
   $: if (view && refresh) view.dispatch({ effects: refreshChips.of(null) });
 
   export function focus() {
@@ -100,6 +103,21 @@
     const pos = Math.min(at ?? view.state.selection.main.head, view.state.doc.length);
     view.dispatch({ changes: { from: pos, insert: text }, selection: { anchor: pos + text.length } });
     view.focus();
+  }
+
+  /**
+   * Replace the text with `next` as one small edit (only the part that
+   * differs), so the caret, scroll and undo behave.
+   */
+  export function setText(next: string) {
+    if (!view) return;
+    const cur = view.state.doc.toString();
+    if (cur === next) return;
+    let a = 0;
+    while (a < cur.length && a < next.length && cur[a] === next[a]) a++;
+    let b = 0;
+    while (b < cur.length - a && b < next.length - a && cur[cur.length - 1 - b] === next[next.length - 1 - b]) b++;
+    view.dispatch({ changes: { from: a, to: cur.length - b, insert: next.slice(a, next.length - b) } });
   }
 
   /** Screen coordinates of a position (default: the caret), for popups. */

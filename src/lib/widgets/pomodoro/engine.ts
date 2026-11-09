@@ -2,7 +2,7 @@ import { derived, get, writable } from 'svelte/store';
 import { notify, requestNotificationPermission } from '../../core/notify';
 import { setStatus } from '../../core/status';
 import { persisted } from '../../core/storage';
-import { activeTaskId, addSpent, creditPomodoro } from '../../core/tasks';
+import { activeTaskId, addSpent, creditPomodoro, setActiveTask } from '../../core/tasks';
 import { openWidget } from '../../core/workspace';
 
 /**
@@ -77,6 +77,22 @@ export function pause() {
 export function toggle() {
   if (get(pomodoro).running) pause();
   else start();
+}
+
+/**
+ * The "focus" button on a task: focus the pomodoro on it and start a focus
+ * session straight away (from a break too). If it is already the focused
+ * task, stop focusing on it and pause. A running focus session only changes task.
+ */
+export function focusOn(taskId: string) {
+  if (get(activeTaskId) === taskId) {
+    setActiveTask(null);
+    pause();
+    return;
+  }
+  setActiveTask(taskId);
+  if (get(pomodoro).mode !== 'focus') setMode('focus');
+  start();
 }
 
 export function reset() {
