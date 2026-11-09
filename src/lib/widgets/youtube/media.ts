@@ -148,9 +148,9 @@ export function toUrl(text: string): URL | null {
   }
 }
 
-/** Pane title "YouTube · lofi hip hop radio". */
+/** Pane title "YouTube · lofi hip hop radio"; the fallback item's title when the pane has none of its own. */
 export function mediaPaneTitle(name: string, value: unknown, fallback: MediaItem): string {
-  const item = value && typeof value === 'object' ? (value as MediaItem) : fallback;
-  const title = typeof item.title === 'string' ? item.title : '';
-  return title ? `${name} · ${title}` : name;
+  const item = value === undefined ? fallback : value;
+  const title = item && typeof item === 'object' ? (item as Partial<MediaItem>).title : undefined;
+  return typeof title === 'string' && title ? `${name} · ${title}` : name;
 }

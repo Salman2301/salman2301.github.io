@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import type { Config } from '../../core/types';
   import { asItem, fetchTitle, itemKey, labelOf, playKey, resolveInput, type MediaItem, type MediaSource, type Preset } from './media';
   import PresetMenu from './PresetMenu.svelte';
@@ -8,7 +8,9 @@
   /**
    * Generic iframe player behind the youtube, ytmusic and spotify widgets:
    * a thin bar (presets/recent menu, URL input, reload, open) above an
-   * embedded player that gets the rest of the pane.
+   * embedded player that gets the rest of the pane. The bar drops to icons
+   * in small panes and floats over the player in short ones; the menu
+   * floats in the viewport so it never gets squeezed by the pane.
    */
   export let focused = false;
   export let config: Config = {};
@@ -17,8 +19,8 @@
   export let presets: Preset[];
   /** Played when the pane has no item of its own. */
   export let fallback: MediaItem;
-  /** Height for the iframe given the room available; null fills the pane. */
-  export let fit: ((available: number) => number) | null = null;
+  /** Iframe height for the stage's width and height (it is centred in it); null fills the stage. */
+  export let fit: ((width: number, height: number) => number) | null = null;
   /** Small print in the menu, e.g. how it plays. */
   export let note = '';
   /** Short hint under the bar in roomy panes. */
@@ -31,18 +33,34 @@
   let toggle: HTMLButtonElement;
   let w = 0;
   let h = 0;
+  let stageW = 0;
   let stageH = 0;
   let draft = '';
   let error = '';
   let menuOpen = false;
   let menuTab: 'presets' | 'recent' = 'presets';
+  let menuStyle = '';
   let frameKey = 0;
+  let touchSized = false;
 
   $: item = asItem(config.item === undefined ? fallback : config.item, source);
+  $: currentKey = item ? itemKey(item) : '';
   $: recentItems = $recent.map((r) => asItem(r, source)).filter((r): r is MediaItem => !!r);
   // Icon-only bar in narrow or short panes; the hint only when there is room to spare.
   $: compact = (w > 0 && w < 420) || (h > 0 && h < 220);
+  // Short panes: the bar floats over the player and shows on hover or keyboard
+  // focus, so the player gets the whole pane (touch screens keep it in place).
+  $: tiny = h > 0 && h < 190;
   $: showHint = !!hint && !compact && h >= 360;
+
+  // Mirrors the media query that gives controls touch-sized heights below.
+  onMount(() => {
+    const query = matchMedia('(max-width: 720px), (pointer: coarse)');
+    const sync = () => (touchSized = query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  });
 
   /* ------------------------------------------------------------ iframe */
 
@@ -64,8 +82,24 @@
     frameKey++;
   }
 
-  // the fitted stage has 6px of padding on each side
-  $: frameHeight = fit && stageH ? fit(Math.max(0, stageH - 12)) : 0;
+  /* -------------------------------------------- fitted players (Spotify) */
+
+  // Matches the fitted stage's CSS: side padding, gap under the player, gap between chips.
+  const EDGE = 6;
+  const FRAME_GAP = 10;
+  const CHIP_GAP = 6;
+  $: frameHeight = fit && stageH ? fit(stageW - 2 * EDGE, stageH) : 0;
+  // Room left under a fitted player holds up to three rows of quick preset chips.
+  $: chipPitch = (touchSized ? 32 : 24) + CHIP_GAP;
+  $: chipRows = frameHeight ? Math.min(3, Math.floor((stageH - frameHeight - 2 * EDGE - FRAME_GAP + CHIP_GAP) / chipPitch)) : 0;
+
+  /** A single row of chips scrolls sideways: let a plain mouse wheel do that. */
+  function scrollChips(e: WheelEvent) {
+    const row = e.currentTarget as HTMLElement;
+    if (chipRows !== 1 || Math.abs(e.deltaX) >= Math.abs(e.deltaY) || row.scrollWidth <= row.clientWidth) return;
+    e.preventDefault();
+    row.scrollLeft += e.deltaY;
+  }
 
   /* ------------------------------------------------------------- title */
 
@@ -116,9 +150,67 @@
     tick().then(() => toggle?.focus({ preventScroll: true }));
   }
 
+  /* -------------------------------------------------------------- menu */
+
+  /**
+   * The menu floats in the viewport under its button (or above it when there
+   * is more room there), so it is usable even in a tiny pane.
+   */
+  function placeMenu() {
+    if (!toggle) return;
+    const r = toggle.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const width = Math.min(340, vw - 16);
+    const left = Math.max(8, Math.min(r.left, vw - width - 8));
+    const below = vh - r.bottom - 12;
+    const above = r.top - 12;
+    const down = below >= 280 || below >= above;
+    const edge = down ? `top:${Math.round(r.bottom + 4)}px` : `bottom:${Math.round(vh - r.top + 4)}px`;
+    menuStyle = `left:${Math.round(left)}px;width:${width}px;max-height:${Math.round(Math.min(460, down ? below : above))}px;${edge}`;
+  }
+
+  function openMenu() {
+    placeMenu();
+    menuOpen = true;
+  }
+
+  function toggleMenu() {
+    if (menuOpen) menuOpen = false;
+    else openMenu();
+  }
+
   function closeMenu(refocus = true) {
     menuOpen = false;
     if (refocus) tick().then(() => toggle?.focus({ preventScroll: true }));
+  }
+
+  // Follow the button when the pane is resized; close when the pane loses focus.
+  $: if (menuOpen && w && h) placeMenu();
+  $: if (!focused && menuOpen) menuOpen = false;
+
+  /**
+   * Close on clicks outside, and when something around the player scrolls
+   * (the page on phones). Scrolling the menu's own list or another pane is fine.
+   */
+  function floating(node: HTMLElement) {
+    const onPointer = (e: PointerEvent) => {
+      if (!node.contains(e.target as Node) && !toggle?.contains(e.target as Node)) menuOpen = false;
+    };
+    const onScroll = (e: Event) => {
+      const target = e.target;
+      if (target instanceof Node && !node.contains(target) && target.contains(root)) menuOpen = false;
+    };
+    document.addEventListener('pointerdown', onPointer, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', placeMenu);
+    return {
+      destroy() {
+        document.removeEventListener('pointerdown', onPointer, true);
+        window.removeEventListener('scroll', onScroll, true);
+        window.removeEventListener('resize', placeMenu);
+      },
+    };
   }
 
   /* --------------------------------------------------------- keyboard */
@@ -127,7 +219,7 @@
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     const target = e.target as HTMLElement;
     if (target === input) {
-      if (e.key === 'Escape') {
+      if (e.code === 'Escape') {
         e.preventDefault();
         draft = '';
         error = '';
@@ -141,24 +233,16 @@
       input?.focus();
     } else if (e.code === 'KeyP') {
       e.preventDefault();
-      menuOpen = !menuOpen;
+      toggleMenu();
     } else if (e.code === 'KeyR') {
       e.preventDefault();
       reload();
-    } else if (e.key === 'Escape' && error) error = '';
+    } else if (e.code === 'Escape' && error) error = '';
   }
 
   /** Clicking into the player moves focus to the iframe: close the menu then. */
   function onFocusIn(e: FocusEvent) {
     if ((e.target as HTMLElement).tagName === 'IFRAME') menuOpen = false;
-  }
-
-  function clickOutside(node: HTMLElement) {
-    const handler = (e: PointerEvent) => {
-      if (!node.contains(e.target as Node) && !toggle?.contains(e.target as Node)) menuOpen = false;
-    };
-    document.addEventListener('pointerdown', handler, true);
-    return { destroy: () => document.removeEventListener('pointerdown', handler, true) };
   }
 
   // Focus the player root when the pane gains focus, unless focus is already
@@ -178,6 +262,7 @@
 <div
   class="player"
   class:compact
+  class:tiny
   bind:this={root}
   bind:clientWidth={w}
   bind:clientHeight={h}
@@ -188,56 +273,61 @@
   on:keydown={onKey}
   on:focusin={onFocusIn}
 >
-  <form class="bar" on:submit|preventDefault={submit}>
-    <button
-      type="button"
-      class="menu-toggle"
-      class:on={menuOpen}
-      bind:this={toggle}
-      title="Presets and recent (p)"
-      aria-label="Presets and recent"
-      aria-haspopup="dialog"
-      aria-expanded={menuOpen}
-      on:click={() => (menuOpen = !menuOpen)}
-    >
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h7" /></svg>
-      {#if !compact}<span>presets</span>{/if}
-    </button>
-    <input
-      bind:this={input}
-      bind:value={draft}
-      on:input={() => (error = '')}
-      class:invalid={!!error}
-      type="text"
-      inputmode="url"
-      enterkeyhint="go"
-      placeholder={compact ? source.shortPlaceholder : source.placeholder}
-      aria-label="{source.name} link"
-      aria-invalid={!!error}
-      spellcheck="false"
-      autocapitalize="off"
-      autocomplete="off"
-    />
-    {#if item}
-      {#if !compact}
-        <button type="button" class="icon-btn" title="Reload the player (r)" aria-label="Reload the player" on:click={reload}>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v2.8h-2.8" /></svg>
-        </button>
+  <!-- The pointer over a cross-origin iframe is invisible to this page, so a
+       short pane reveals its floating bar from a strip along the top edge. -->
+  {#if tiny}<div class="reveal-zone" aria-hidden="true"><span class="grip" /></div>{/if}
+  <div class="chrome" class:pinned={menuOpen || !!error}>
+    <form class="bar" on:submit|preventDefault={submit}>
+      <button
+        type="button"
+        class="menu-toggle"
+        class:on={menuOpen}
+        bind:this={toggle}
+        title="Presets and recent (p)"
+        aria-label="Presets and recent"
+        aria-haspopup="dialog"
+        aria-expanded={menuOpen}
+        on:click={toggleMenu}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h7" /></svg>
+        {#if !compact}<span>presets</span>{/if}
+      </button>
+      <input
+        bind:this={input}
+        bind:value={draft}
+        on:input={() => (error = '')}
+        class:invalid={!!error}
+        type="text"
+        inputmode="url"
+        enterkeyhint="go"
+        placeholder={compact ? source.shortPlaceholder : source.placeholder}
+        aria-label="{source.name} link"
+        aria-invalid={!!error}
+        spellcheck="false"
+        autocapitalize="off"
+        autocomplete="off"
+      />
+      {#if item}
+        {#if !compact}
+          <button type="button" class="icon-btn" title="Reload the player (r)" aria-label="Reload the player" on:click={reload}>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5v2.8h-2.8" /></svg>
+          </button>
+        {/if}
+        <a class="icon-btn" href={source.pageUrl(item)} target="_blank" rel="noopener noreferrer" title="Open on {source.name}" aria-label="Open on {source.name}">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3" /></svg>
+        </a>
       {/if}
-      <a class="icon-btn" href={source.pageUrl(item)} target="_blank" rel="noopener noreferrer" title="Open on {source.name}" aria-label="Open on {source.name}">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5v3a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3" /></svg>
-      </a>
-    {/if}
-  </form>
+    </form>
 
-  {#if error}
-    <p class="error" role="alert">{error}</p>
-  {:else if showHint}
-    <p class="hint">{hint}</p>
-  {/if}
+    {#if error}
+      <p class="error" role="alert">{error}</p>
+    {:else if showHint}
+      <p class="hint">{hint}</p>
+    {/if}
+  </div>
 
   {#if menuOpen}
-    <div class="menu-wrap" use:clickOutside>
+    <div class="menu-wrap" style={menuStyle} use:floating>
       <PresetMenu
         {presets}
         recent={recentItems}
@@ -252,7 +342,7 @@
     </div>
   {/if}
 
-  <div class="stage" class:fitted={!!fit} bind:clientHeight={stageH}>
+  <div class="stage" class:fitted={!!fit} bind:clientWidth={stageW} bind:clientHeight={stageH}>
     {#if item && src}
       {#key frameKey}
         <iframe
@@ -262,14 +352,28 @@
           loading="lazy"
           referrerpolicy="strict-origin-when-cross-origin"
           allow="autoplay; encrypted-media; picture-in-picture; clipboard-write; fullscreen"
-          allowfullscreen
         />
       {/key}
+      {#if chipRows > 0}
+        <div
+          class="chips"
+          class:single={chipRows === 1}
+          style="max-height:{chipRows * chipPitch - CHIP_GAP}px"
+          role="group"
+          aria-label="Quick presets"
+          on:wheel={scrollChips}
+        >
+          {#each presets as p (p.slug)}
+            {@const on = itemKey(p.item) === currentKey}
+            <button type="button" class="chip" class:on aria-pressed={on} title={p.note} on:click={() => play(p.item)}>{p.name}</button>
+          {/each}
+        </div>
+      {/if}
     {:else}
       <div class="empty">
         <p>Nothing to play here.</p>
         <p class="muted">Paste a link above or pick a preset.</p>
-        <button type="button" class="empty-btn" on:click={() => (menuOpen = true)}>show presets</button>
+        <button type="button" class="empty-btn" on:click={openMenu}>show presets</button>
       </div>
     {/if}
   </div>
@@ -289,6 +393,10 @@
   }
   .player :global(*:focus:not(:focus-visible)) {
     outline: none;
+  }
+  .chrome {
+    flex: 0 0 auto;
+    background: var(--bg1);
   }
   .bar {
     display: flex;
@@ -377,32 +485,16 @@
   }
   .error {
     color: var(--hl1);
-    background: color-mix(in srgb, var(--hl1) 8%, transparent);
+    background: color-mix(in srgb, var(--hl1) 8%, var(--bg1));
   }
   .hint {
     color: var(--t1);
   }
   .menu-wrap {
-    position: absolute;
-    z-index: 5;
-    top: 33px;
-    left: 6px;
-    bottom: 6px;
-    width: min(340px, calc(100% - 12px));
+    position: fixed;
+    z-index: 45;
     display: flex;
     flex-direction: column;
-    justify-content: flex-start;
-    pointer-events: none;
-  }
-  .compact .menu-wrap {
-    top: 31px;
-    left: 4px;
-    bottom: 4px;
-    width: calc(100% - 8px);
-    max-width: 340px;
-  }
-  .menu-wrap > :global(*) {
-    pointer-events: auto;
   }
   .stage {
     position: relative;
@@ -412,21 +504,71 @@
     background: color-mix(in srgb, var(--bg2) 22%, var(--bg1));
   }
   .stage.fitted {
-    align-items: center;
-    padding: 6px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 6px;
     background: transparent;
   }
+  /* Stretched by the stage rather than height: 100%, which needs a definite
+     pane height (a stacked pane on a phone only has a min-height). */
   iframe {
     flex: 1;
     display: block;
     width: 100%;
-    height: 100%;
     min-height: 0;
     border: 0;
   }
   .fitted iframe {
     flex: 0 0 auto;
     border-radius: 12px;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .chips.single {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow: auto hidden;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+  }
+  .single .chip {
+    flex: 0 0 auto;
+  }
+  /* centred while the row fits, scrollable from its first chip once it does not */
+  .single .chip:first-child {
+    margin-left: auto;
+  }
+  .single .chip:last-child {
+    margin-right: auto;
+  }
+  .chip {
+    height: 24px;
+    max-width: 100%;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--bg2) 85%, transparent);
+    color: var(--t1);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chip:hover {
+    color: var(--hl1);
+    border-color: var(--hl1);
+  }
+  .chip.on {
+    color: var(--hl1);
+    border-color: color-mix(in srgb, var(--hl1) 60%, transparent);
+    background: color-mix(in srgb, var(--hl1) 12%, transparent);
   }
   .empty {
     flex: 1;
@@ -452,6 +594,51 @@
     color: var(--hl1);
     font-size: 12px;
   }
+  .reveal-zone {
+    display: none;
+  }
+  /* Short panes with a mouse: the bar floats over the top of the player and
+     shows while the pointer is on the top strip or the bar, or a control has
+     keyboard focus. */
+  @media (hover: hover) {
+    .tiny .reveal-zone {
+      position: absolute;
+      z-index: 2;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 14px;
+      display: flex;
+      justify-content: center;
+      background: linear-gradient(color-mix(in srgb, var(--bg1) 55%, transparent), transparent);
+    }
+    .grip {
+      width: 28px;
+      height: 3px;
+      margin-top: 4px;
+      border-radius: 2px;
+      background: color-mix(in srgb, var(--t1) 75%, transparent);
+    }
+    .tiny .chrome {
+      position: absolute;
+      z-index: 3;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: color-mix(in srgb, var(--bg1) 94%, transparent);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease 0.4s;
+    }
+    .tiny:hover .chrome,
+    .tiny:focus-visible .chrome,
+    .tiny .chrome:focus-within,
+    .tiny .chrome.pinned {
+      opacity: 1;
+      pointer-events: auto;
+      transition-delay: 0s;
+    }
+  }
   @media (max-width: 720px), (pointer: coarse) {
     .bar,
     .compact .bar {
@@ -468,16 +655,20 @@
       height: 34px;
       min-width: 34px;
     }
-    .menu-wrap,
-    .compact .menu-wrap {
-      top: 43px;
-      left: 6px;
-      bottom: 6px;
-      width: calc(100% - 12px);
-      max-width: none;
+    .chip {
+      height: 32px;
+      padding: 0 14px;
+      font-size: 12px;
     }
     .empty-btn {
       min-height: 36px;
+    }
+  }
+  /* Stacked panes on phones: never shrink the player below a 16:9 frame of
+     the screen width (or the 72vh pane minus its header and bar). */
+  @media (max-width: 720px) {
+    .stage {
+      min-height: min(56.25vw, calc(72vh - 80px));
     }
   }
 </style>
