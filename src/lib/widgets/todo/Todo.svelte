@@ -5,13 +5,13 @@
     activeTaskId,
     addProject,
     addTask,
+    addTaskLines,
     clearDone,
     formatSpent,
     INBOX_ID,
     isOverdue,
     projectOf,
     projects,
-    removeProject,
     removeTask,
     renameProject,
     renameTask,
@@ -19,12 +19,15 @@
     setActiveTask,
     setDue,
     setProjectNotes,
+    setProjectTheme,
     setTaskNotes,
     tasks,
     toggleTask,
     type Task,
   } from '../../core/tasks';
   import { friendlyDate } from '../../core/dates';
+  import { activeSpace, ALL, deleteSpace, setActiveSpace } from '../../core/spaces';
+  import { darkThemes, lightThemes } from '../../core/theme';
   import { linksIn, openMention, segments } from '../../core/mentions';
   import type { Note } from '../../widgets/notes/store';
   import DatePicker from '../../ui/DatePicker.svelte';
@@ -44,10 +47,17 @@
   const FILTERS: Filter[] = ['all', 'active', 'done'];
   $: filter = ((config.filter as Filter) || 'all') as Filter;
 
-  /* ---------------------------------------------------------- projects */
+  /* ------------------------------------------------------------ spaces */
 
-  // Each pane shows one project (kept in its config); the Inbox is the fallback.
-  $: project = $projects.find((p) => p.id === config.project) ?? $projects.find((p) => p.id === INBOX_ID) ?? $projects[0];
+  // A space chosen in the status bar wins; otherwise each pane shows the
+  // space in its config, falling back to the Inbox. (Spaces are "projects"
+  // in the code and in storage.)
+  $: inbox = $projects.find((p) => p.id === INBOX_ID) ?? $projects[0];
+  $: project =
+    $activeSpace !== ALL
+      ? $projects.find((p) => p.id === $activeSpace) ?? inbox
+      : $projects.find((p) => p.id === config.project) ?? inbox;
+  $: chips = $activeSpace === ALL ? $projects : $projects.filter((p) => p.id === $activeSpace);
   $: projectTasks = $tasks.filter((t) => projectOf(t) === project.id);
   $: left = projectTasks.filter((t) => !t.done).length;
   $: openByProject = countOpen($tasks);
@@ -68,7 +78,9 @@
     const p = addProject(newProjectName);
     newProjectName = '';
     newProject = false;
-    if (p) updateConfig({ project: p.id });
+    if (!p) return;
+    if ($activeSpace !== ALL) setActiveSpace(p.id);
+    else updateConfig({ project: p.id });
   }
 
   function startRenameProject() {
@@ -84,13 +96,13 @@
   function deleteProject() {
     const id = project.id;
     updateConfig({ project: INBOX_ID });
-    removeProject(id);
+    deleteSpace(id);
   }
 
   /* ------------------------------------------------------------- rows */
 
   /**
-   * Top-level tasks in this project, each followed by its sub-tasks. A row
+   * Top-level tasks in this space, each followed by its sub-tasks. A row
    * shows when it matches the filter, or when one of its sub-tasks does.
    */
   $: rows = buildRows(projectTasks, filter);
@@ -140,6 +152,22 @@
 
   function addSub(parent: string) {
     if (addTask(subText, { parentId: parent })) subText = '';
+  }
+
+  /**
+   * Pasting several lines adds a task per line: list markers go, [x] items
+   * come in done, and indented lines become sub-tasks. One line pastes as usual.
+   */
+  let pasteNote = '';
+  let pasteTimer: ReturnType<typeof setTimeout> | undefined;
+  function onPaste(e: ClipboardEvent, parentId?: string) {
+    const data = e.clipboardData?.getData('text/plain') ?? '';
+    if (!/[\r\n]/.test(data.trim())) return;
+    e.preventDefault();
+    const added = addTaskLines(data, parentId ? { parentId } : { projectId: project.id });
+    pasteNote = added.length ? `added ${added.length} ${added.length === 1 ? 'task' : 'tasks'}` : 'nothing to add';
+    if (pasteTimer) clearTimeout(pasteTimer);
+    pasteTimer = setTimeout(() => (pasteNote = ''), 2500);
   }
 
   function openSub(id: string) {
@@ -193,7 +221,7 @@
     }
   }
 
-  // An @ link from a note asks for this task: show its project, scroll to it and flash it.
+  // An @ link from a note asks for this task: show its space, scroll to it and flash it.
   let flashId: string | null = null;
   $: if ($revealTaskId) reveal($revealTaskId);
   function reveal(id: string) {
@@ -214,8 +242,8 @@
 </script>
 
 <div class="todo" class:narrow={width > 0 && width < 460} bind:clientWidth={width}>
-  <nav class="projects" aria-label="Projects">
-    {#each $projects as p (p.id)}
+  <nav class="projects" aria-label="Spaces">
+    {#each chips as p (p.id)}
       <button class="chip" class:on={p.id === project.id} on:click={() => updateConfig({ project: p.id })}>
         {p.name}
         {#if openByProject[p.id]}<span class="n">{openByProject[p.id]}</span>{/if}
@@ -226,9 +254,9 @@
         class="pinput"
         use:focusOnMount
         bind:value={newProjectName}
-        placeholder="project name"
+        placeholder="space name"
         maxlength="40"
-        aria-label="New project name"
+        aria-label="New space name"
         on:keydown={(e) => {
           if (e.key === 'Enter') createProject();
           if (e.key === 'Escape') newProject = false;
@@ -237,7 +265,7 @@
         on:blur={() => (newProject = false)}
       />
     {:else}
-      <button class="chip add" on:click={() => (newProject = true)} title="New project">+</button>
+      <button class="chip add" on:click={() => (newProject = true)} title="New space">+</button>
     {/if}
   </nav>
 
@@ -248,7 +276,7 @@
         use:focusOnMount
         bind:value={projectName}
         maxlength="40"
-        aria-label="Project name"
+        aria-label="Space name"
         on:keydown={(e) => {
           if (e.key === 'Enter') finishRenameProject();
           if (e.key === 'Escape') renamingProject = false;
@@ -261,10 +289,21 @@
     {/if}
     <span class="pleft">{left} left</span>
     <span class="spacer" />
-    <button class:on={projectNotesOpen || !!project.notes} title="Notes for this project" on:click={() => (projectNotesOpen = !projectNotesOpen)}>notes</button>
-    <button on:click={startRenameProject} title="Rename project">rename</button>
+    <button class:on={projectNotesOpen || !!project.notes} title="Notes for this space" on:click={() => (projectNotesOpen = !projectNotesOpen)}>notes</button>
+    <select
+      class="ptheme"
+      value={project.theme ?? ''}
+      on:change={(e) => setProjectTheme(project.id, e.currentTarget.value || null)}
+      title="Theme while this space is active"
+      aria-label="Space theme"
+    >
+      <option value="">default theme</option>
+      <optgroup label="dark">{#each darkThemes as name}<option value={name}>{name}</option>{/each}</optgroup>
+      <optgroup label="light">{#each lightThemes as name}<option value={name}>{name}</option>{/each}</optgroup>
+    </select>
+    <button on:click={startRenameProject} title="Rename space">rename</button>
     {#if project.id !== INBOX_ID}
-      <button class="del" on:click={deleteProject} title="Delete project (its tasks move to the Inbox)">delete</button>
+      <button class="del" on:click={deleteProject} title="Delete space (its tasks and notes move to the Inbox)">delete</button>
     {/if}
   </header>
 
@@ -275,7 +314,7 @@
       value={project.notes}
       on:input={(e) => setProjectNotes(project.id, e.currentTarget.value)}
       placeholder="notes for {project.name}. @ links a note"
-      aria-label="Project notes"
+      aria-label="Space notes"
       spellcheck="false"
     />
     {#if linksOf(project.notes, $notes, $tasks).length}
@@ -288,8 +327,9 @@
   {/if}
 
   <form on:submit|preventDefault={add}>
-    <input bind:this={input} use:mention={'note'} bind:value={text} on:keydown={onInputKey} placeholder="add a task to {project.name}. @tmrw sets a reminder, @ links a note" maxlength="200" aria-label="New task" spellcheck="false" />
+    <input bind:this={input} use:mention={'note'} bind:value={text} on:keydown={onInputKey} on:paste={(e) => onPaste(e)} placeholder="add a task to {project.name}. @tmrw sets a reminder, @ links a note" maxlength="200" aria-label="New task" spellcheck="false" />
   </form>
+  {#if pasteNote}<p class="paste-note" role="status">{pasteNote}</p>{/if}
 
   <ul>
     {#each rows as { task: t, depth }, i (t.id)}
@@ -354,6 +394,7 @@
             use:focusOnMount
             use:mention={'note'}
             bind:value={subText}
+            on:paste={(e) => onPaste(e, t.id)}
             placeholder="sub-task, press enter"
             maxlength="200"
             aria-label="New sub-task"
@@ -474,6 +515,16 @@
   .notes:focus {
     border-color: var(--hl1);
   }
+  .ptheme {
+    max-width: 120px;
+    padding: 0 4px;
+    border: 1px solid var(--bg2);
+    border-radius: 4px;
+    background: var(--bg1);
+    color: var(--t1);
+    font: inherit;
+    font-size: 11px;
+  }
   .project-notes {
     margin-bottom: 0;
   }
@@ -492,6 +543,11 @@
   }
   form input:focus {
     border-color: var(--hl1);
+  }
+  .paste-note {
+    margin: -2px 12px 4px;
+    color: var(--hl1);
+    font-size: 11px;
   }
   ul {
     flex: 1;

@@ -6,6 +6,7 @@
   import { toggleRadio } from './lib/widgets/radio/player';
   import { onMount } from 'svelte';
   import { startReminders } from './lib/core/reminders';
+  import { startScreensaver } from './lib/core/screensaver';
   import {
     closePane,
     focusNeighbour,
@@ -54,6 +55,10 @@
       case 'Slash':
         handled();
         openOverlay.set('keys');
+        return;
+      case 'KeyS':
+        handled();
+        startScreensaver();
         return;
       case 'Backslash':
       case 'Enter':

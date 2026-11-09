@@ -8,6 +8,7 @@
   import { focusPane, leaves, workspace } from '../core/workspace';
   import ClockPanel from './ClockPanel.svelte';
   import MusicControl from './MusicControl.svelte';
+  import SpaceMenu from './SpaceMenu.svelte';
 
   let now = new Date();
   const t = setInterval(() => (now = new Date()), 1000);
@@ -40,6 +41,7 @@
       <span class="seg item tone-{item.tone ?? 'normal'}" title={item.title}>{item.text}</span>
     {/if}
   {/each}
+  <SpaceMenu />
   <MusicControl />
   <button
     class="seg mode"

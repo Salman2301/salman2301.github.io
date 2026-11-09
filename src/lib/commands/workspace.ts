@@ -6,7 +6,6 @@ import { templatePickerOpen } from '../core/ui';
 import { notify } from '../core/notify';
 import {
   closePane,
-  closeTab,
   focusPane,
   leaf,
   leaves,
@@ -116,16 +115,10 @@ const commands: CommandDef[] = [
   {
     name: 'exit',
     aliases: ['close', 'quit'],
-    description: 'close this pane; the last pane closes its tab, and the last tab closes the window',
+    description: 'close this pane; the last pane closes its tab (not the last tab)',
     group: 'workspace',
     run: (ctx) => {
-      const s = get(workspace);
-      if (leaves(s.root).length > 1) return closePane(ctx.paneId);
-      if (s.tabs.length > 1) return void closeTab(s.active);
-      // Last pane of the only tab: close the window. Browsers only allow this for windows
-      // the page did not open, so say what to do when they refuse.
-      window.close();
-      ctx.print('this browser blocked the window from closing itself. Close the tab to leave.', 'muted');
+      if (closePane(ctx.paneId) === 'none') ctx.print('this is the only pane in the only tab, so there is nothing to close', 'muted');
     },
   },
   {

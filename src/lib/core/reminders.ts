@@ -1,5 +1,5 @@
 import { derived, get } from 'svelte/store';
-import { notes, titleOf } from '../widgets/notes/store';
+import { notes, noteSpace, titleOf } from '../widgets/notes/store';
 import { parseDate } from './dates';
 import { datesIn } from './mentions';
 import { notify } from './notify';
@@ -20,8 +20,8 @@ export interface Reminder {
   /** "HH:MM", when the reminder has a time. */
   time?: string;
   label: string;
-  /** Tasks only: the project (list) the task is in. */
-  projectId?: string;
+  /** The space the task or note is in. */
+  projectId: string;
   done: boolean;
 }
 
@@ -33,17 +33,18 @@ export const reminders = derived([tasks, notes], ([$tasks, $notes]) => {
   }
   for (const n of $notes) {
     for (const d of new Set(datesIn(n.body))) {
-      out.push({ kind: 'note', id: n.id, day: d.slice(0, 10), time: d.slice(11) || undefined, label: titleOf(n), done: false });
+      out.push({ kind: 'note', id: n.id, day: d.slice(0, 10), time: d.slice(11) || undefined, label: titleOf(n), projectId: noteSpace(n), done: false });
     }
   }
   return out.sort((a, b) => (a.day + (a.time ?? '')).localeCompare(b.day + (b.time ?? '')));
 });
 
-/** Which reminders the calendar shows: 'all', or one project's id (its tasks only). */
+/** Which space the status-bar calendar shows when no space is active: 'all' or a space id. */
 export const calendarList = persisted<string>('calendar:list', 'all');
 
+/** Reminders in one space ('all' for every space): its tasks and its notes. */
 export function inList(list: Reminder[], filter: string): Reminder[] {
-  return filter === 'all' ? list : list.filter((r) => r.kind === 'task' && r.projectId === filter);
+  return filter === 'all' ? list : list.filter((r) => r.projectId === filter);
 }
 
 /* ------------------------------------------------------------- alerts */

@@ -5,7 +5,8 @@
  * index.html for browsers that ignore SVG favicons.
  */
 
-const S_PATH =
+/** The squared S of the site mark, in a 64 x 64 box (also drawn by the bouncing screensaver). */
+export const S_PATH =
   'M43 23.5V21.5Q43 19.5 41 19.5H35.5Q33.2 19.5 32 15Q30.8 19.5 28.5 19.5H24Q21.5 19.5 21.5 22V29Q21.5 31.5 24 31.5H40Q42.5 31.5 42.5 34V42Q42.5 44.5 40 44.5H35.5Q33.2 44.5 32 49Q30.8 44.5 28.5 44.5H23Q21 44.5 21 42.5V40.5';
 
 export function faviconSvg(bg: string, accent: string): string {

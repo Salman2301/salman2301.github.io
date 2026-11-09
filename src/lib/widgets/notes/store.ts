@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
 import { persisted } from '../../core/storage';
+import { INBOX_ID } from '../../core/tasks';
 
 export interface Note {
   id: string;
@@ -7,6 +8,10 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   pinned?: boolean;
+  /** The space the note belongs to; missing means the Inbox. */
+  spaceId?: string;
+  /** Position in the note list (lower first), set by dragging. */
+  order?: number;
 }
 
 const WELCOME = `# Welcome to notes
@@ -51,15 +56,52 @@ export function titleOf(note: Note | undefined): string {
   return clean.slice(0, 60) || 'Untitled';
 }
 
+export const noteSpace = (n: Note): string => n.spaceId ?? INBOX_ID;
+
+/** Pinned first, then the order set by dragging (new notes start at the top). */
 export function sortNotes(list: Note[]): Note[] {
-  return [...list].sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt);
+  return [...list].sort(
+    (a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (a.order ?? 0) - (b.order ?? 0) || b.updatedAt - a.updatedAt,
+  );
 }
 
-export function createNote(body = ''): Note {
+// Notes saved before ordering existed keep the order they had (newest first).
+{
+  const list = get(notes);
+  if (list.some((n) => typeof n.order !== 'number')) {
+    const byRecent = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
+    notes.set(list.map((n) => ({ ...n, order: typeof n.order === 'number' ? n.order : byRecent.indexOf(n) })));
+  }
+}
+
+export function createNote(body = '', spaceId?: string): Note {
   const t = Date.now();
-  const note: Note = { id: makeId(), body, createdAt: t, updatedAt: t };
+  const first = Math.min(0, ...get(notes).map((n) => n.order ?? 0));
+  const note: Note = { id: makeId(), body, createdAt: t, updatedAt: t, order: first - 1 };
+  if (spaceId && spaceId !== INBOX_ID) note.spaceId = spaceId;
   notes.update((list) => [note, ...list]);
   return note;
+}
+
+/** Move a note to another space. */
+export function moveNote(id: string, spaceId: string) {
+  notes.update((list) => list.map((n) => (n.id === id ? { ...n, spaceId: spaceId === INBOX_ID ? undefined : spaceId } : n)));
+}
+
+/**
+ * Put the notes `ids` in this order (a dragged list). Their slots are the
+ * order values they held between them, so notes outside the list (other
+ * spaces, filtered out) keep their places.
+ */
+export function reorderNotes(ids: string[]) {
+  const list = get(notes);
+  const slots = ids
+    .map((id) => list.find((n) => n.id === id)?.order ?? 0)
+    .sort((a, b) => a - b);
+  // strictly increasing, even if two notes shared a value
+  for (let i = 1; i < slots.length; i++) if (slots[i] <= slots[i - 1]) slots[i] = slots[i - 1] + 0.001;
+  const next = new Map(ids.map((id, i) => [id, slots[i]] as const));
+  notes.set(list.map((n) => (next.has(n.id) ? { ...n, order: next.get(n.id)! } : n)));
 }
 
 export function updateNote(id: string, body: string) {
