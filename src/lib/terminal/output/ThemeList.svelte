@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { darkTheme, darkThemes, lightTheme, lightThemes, setTheme, setThemeMode, THEME_MODES, themeMode, themes, themeStore } from '../../core/theme';
+  import { chooseTheme } from '../../core/spaces';
+  import { darkTheme, darkThemes, lightTheme, lightThemes, setThemeMode, THEME_MODES, themeMode, themes, themeStore } from '../../core/theme';
   const GROUPS = [
     { kind: 'dark', names: darkThemes },
     { kind: 'light', names: lightThemes },
@@ -15,7 +16,7 @@
   <p class="head">{g.kind} themes (picked: {g.kind === 'dark' ? $darkTheme : $lightTheme})</p>
   <div class="list">
     {#each g.names as name}
-      <button class:active={$themeStore === name} on:click={() => setTheme(name)}>
+      <button class:active={$themeStore === name} on:click={() => chooseTheme(name)}>
         <span class="swatches">
           {#each themes[name] as c}<span style="background:{c}" />{/each}
         </span>

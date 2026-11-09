@@ -1,12 +1,12 @@
 <script lang="ts">
   import { get } from 'svelte/store';
-  import { cycleTheme } from './lib/core/theme';
   import { overlays } from './lib/core/registry';
   import { openOverlay, templatePickerOpen } from './lib/core/ui';
   import { stepStation, toggleRadio } from './lib/widgets/radio/player';
   import { onMount } from 'svelte';
   import { startReminders } from './lib/core/reminders';
   import { startScreensaver } from './lib/core/screensaver';
+  import { cycleThemeHere } from './lib/core/spaces';
   import { startScreenTime } from './lib/core/screentime';
   import {
     closePane,
@@ -43,7 +43,7 @@
     switch (e.code) {
       case 'KeyY':
         handled();
-        cycleTheme(e.shiftKey);
+        cycleThemeHere(e.shiftKey);
         return;
       case 'KeyT':
         handled();

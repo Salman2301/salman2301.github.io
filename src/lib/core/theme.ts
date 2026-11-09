@@ -165,19 +165,23 @@ export function cycleThemeMode(): ThemeMode {
 }
 
 /**
- * Move to the next theme of the same kind (dark or light), or a random one
- * of that kind (never the current one). Alt+Y uses next, Alt+Shift+Y random.
+ * The next theme of the same kind (dark or light) as the one on screen, or a
+ * random one of that kind (never the current one).
  */
-export function cycleTheme(random = false): ThemeName {
+export function nextTheme(random = false): ThemeName {
   const current = get(themeStore);
   const pool = kindOf(current) === 'dark' ? darkThemes : lightThemes;
-  let name: ThemeName;
-  if (random) {
-    const others = pool.filter((n) => n !== current);
-    name = others[Math.floor(Math.random() * others.length)] ?? current;
-  } else {
-    name = pool[(pool.indexOf(current) + 1) % pool.length];
-  }
+  if (!random) return pool[(pool.indexOf(current) + 1) % pool.length];
+  const others = pool.filter((n) => n !== current);
+  return others[Math.floor(Math.random() * others.length)] ?? current;
+}
+
+/**
+ * Show the next (or a random) theme as the normal theme. Spaces wrap this
+ * (chooseTheme / cycleThemeHere) so a tab in a space changes the space's theme.
+ */
+export function cycleTheme(random = false): ThemeName {
+  const name = nextTheme(random);
   setTheme(name);
   return name;
 }

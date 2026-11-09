@@ -1,8 +1,8 @@
 import { derived, get } from 'svelte/store';
 import { notes } from '../widgets/notes/store';
 import { load, remove } from './storage';
-import { INBOX_ID, projects, removeProject, type Project } from './tasks';
-import { isThemeName, themeOverride } from './theme';
+import { INBOX_ID, projects, removeProject, setProjectTheme, type Project } from './tasks';
+import { isThemeName, nextTheme, setTheme, themeOverride, type ThemeName } from './theme';
 import { setTabSpace, workspace } from './workspace';
 
 /**
@@ -63,4 +63,24 @@ export function deleteSpace(id: string): boolean {
   notes.update((list) => list.map((n) => (n.spaceId === id ? { ...n, spaceId: undefined } : n)));
   for (const t of get(workspace).tabs) if (t.space === id) setTabSpace(t.id, ALL);
   return true;
+}
+
+/**
+ * Pick a theme the way the user means it: in a tab pinned to a space it
+ * becomes that space's theme; under "all spaces" it is the normal theme.
+ * Used by Alt+Y / Alt+Shift+Y, the status-bar picker and the theme command.
+ */
+export function chooseTheme(name: string): boolean {
+  const space = get(currentSpace);
+  if (!space) return setTheme(name);
+  if (!isThemeName(name)) return false;
+  setProjectTheme(space.id, name);
+  return true;
+}
+
+/** Next (or random) theme of the same kind, applied with chooseTheme. */
+export function cycleThemeHere(random = false): ThemeName {
+  const name = nextTheme(random);
+  chooseTheme(name);
+  return name;
 }
