@@ -129,6 +129,11 @@ export interface CommandDef {
   description: string;
   /** e.g. "pomodoro [start|pause|reset|25/5]" */
   usage?: string;
+  /**
+   * Longer explanation shown by `<command> --help`, `<command> -h` and
+   * `help <command>`, under the usage and description. Plain text, may span lines.
+   */
+  help?: string;
   group?: CommandGroup;
   hidden?: boolean;
   /** Tab-completion candidates for the argument being typed. */

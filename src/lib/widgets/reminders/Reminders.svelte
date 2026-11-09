@@ -30,7 +30,7 @@
   const dueAt = (r: Reminder) => (parseDate(r.time ? `${r.day} ${r.time}` : `${r.day} 23:59`)?.getTime() ?? 0);
 
   // Past dates in notes only show with "show done".
-  $: shown = inList($reminders, $activeSpace).filter((r) => showDone || (!r.done && !(r.kind === 'note' && r.day < today)));
+  $: shown = inList($reminders, $activeSpace).filter((r) => !r.upcoming).filter((r) => showDone || (!r.done && !(r.kind === 'note' && r.day < today)));
   $: groups = [
     // Tasks stay overdue until ticked; a date in a note only counts on its own day.
     { id: 'overdue', title: 'overdue', items: shown.filter((r) => !r.done && dueAt(r) < now.getTime() && (r.kind === 'task' ? r.day <= today : r.day === today)) },
@@ -111,6 +111,7 @@
                 <span class="note-ico" title="from a note" />
               {/if}
               <button class="label" on:click={() => openMention(r.kind, r.id)} title={r.kind === 'task' ? 'Open the task' : 'Open the note'}>{r.label}</button>
+              {#if r.repeat}<span class="rep" title="repeats {r.repeat}">↻</span>{/if}
               <span class="when">{g.id === 'today' || g.id === 'tomorrow' ? r.time ?? 'all day' : friendlyDate(r.time ? `${r.day} ${r.time}` : r.day)}</span>
               {#if $activeSpace === ALL}<span class="space">{spaceName($projects, r.projectId)}</span>{/if}
             </li>
@@ -133,6 +134,11 @@
 </div>
 
 <style>
+  .rep {
+    flex: 0 0 auto;
+    color: var(--hl1);
+    font-size: 11px;
+  }
   .rem {
     height: 100%;
     display: flex;

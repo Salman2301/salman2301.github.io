@@ -2,11 +2,11 @@
   import { onDestroy, onMount } from 'svelte';
   import type { GameApi } from '../../core/types';
   import { clamp, fitCanvas, heldKeys, readPalette, startLoop, watchPalette, type Palette } from '../kit';
+  import { newBall, stepBall, T } from './physics';
 
   export let paused = true;
   export let api: GameApi;
 
-  const T = 8;
   const VW = 168;
   const VH = 96;
 
@@ -20,7 +20,7 @@
       '#................###.............o...###.............###.....#',
       '#..........o..........##........###.........o..........###...#',
       '#.........###.......................................=........#',
-      '#.P.....##.........C........o..........C.......#####.........#',
+      '#.P.....##.........C........o..............C...#####.........#',
       '#####...........#######....###....##.....####..#...##...######',
       '#####^^^^^^^^^^^#######^^^^###^^^^##^^^^^####^^#^^^##^^^######',
       '##############################################################',
@@ -34,7 +34,7 @@
       '#.....o...............o.....................#..........................#',
       '#....###.....=.......###.......o.......##...#....o.........o...........#',
       '#............#..............#####..........##...###...=...###..........#',
-      '#.P.....C....#.....##..................C.........................##....#',
+      '#.P..........#C....##..................C.........................##....#',
       '######.......####......##.......##...######.....##.....####......######',
       '######^^^^^^^####^^^^^^##^^^^^^^##^^^######^^^^^##^^^^^####^^^^^^######',
       '######################################################################',
@@ -60,7 +60,9 @@
   let map: string[][] = [];
   let ringsLeft = 0;
   let spawn = { x: 0, y: 0 };
-  const ball = { x: 0, y: 0, vx: 0, vy: 0, r: 3.2, grounded: false };
+  const ball = newBall(0, 0);
+  /** The jump key was held last frame (to spot a fresh press). */
+  let upWas = false;
   let lives = 3;
   let score = 0;
   let camX = 0;
@@ -90,7 +92,17 @@
   }
 
   function respawn() {
-    Object.assign(ball, { x: spawn.x, y: spawn.y, vx: 0, vy: 0, grounded: false });
+    Object.assign(ball, newBall(spawn.x, spawn.y));
+    snapCamera();
+  }
+
+  function cameraTarget() {
+    const worldW = (map[0]?.length ?? 0) * T;
+    return clamp(ball.x - VW / 2, 0, Math.max(0, worldW - VW));
+  }
+
+  function snapCamera() {
+    camX = cameraTarget();
   }
 
   function flash(text: string) {
@@ -99,7 +111,6 @@
   }
 
   const tile = (tx: number, ty: number) => (ty < 0 ? '.' : map[ty]?.[tx] ?? '#');
-  const solid = (c: string) => c === '#' || c === '=';
 
   const keys = heldKeys(api);
 
@@ -114,40 +125,6 @@
     }
   }
 
-  function collide(axis: 'x' | 'y') {
-    const r = ball.r;
-    const x0 = Math.floor((ball.x - r) / T);
-    const x1 = Math.floor((ball.x + r - 0.01) / T);
-    const y0 = Math.floor((ball.y - r) / T);
-    const y1 = Math.floor((ball.y + r - 0.01) / T);
-    for (let ty = y0; ty <= y1; ty++)
-      for (let tx = x0; tx <= x1; tx++) {
-        const c = tile(tx, ty);
-        if (!solid(c)) continue;
-        if (axis === 'x') {
-          if (ball.vx > 0) ball.x = tx * T - r;
-          else if (ball.vx < 0) ball.x = (tx + 1) * T + r;
-          ball.vx = 0;
-        } else {
-          if (ball.vy > 0) {
-            ball.y = ty * T - r;
-            if (c === '=') {
-              ball.vy = -235;
-              api.sfx('blip');
-            } else if (ball.vy > 140) ball.vy = -ball.vy * 0.32;
-            else {
-              ball.vy = 0;
-              ball.grounded = true;
-            }
-          } else if (ball.vy < 0) {
-            ball.y = (ty + 1) * T + r;
-            ball.vy = 0;
-          }
-        }
-        return;
-      }
-  }
-
   function update(dt: number) {
     if (over) return;
     messageT = Math.max(0, messageT - dt);
@@ -157,20 +134,11 @@
       return;
     }
     levelTime += dt;
-    const dir = (keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0);
-    const accel = ball.grounded ? 420 : 260;
-    if (dir) ball.vx = clamp(ball.vx + dir * accel * dt, -62, 62);
-    else ball.vx *= ball.grounded ? Math.pow(0.0008, dt) : Math.pow(0.4, dt);
-    if (keys.has('up') && ball.grounded) {
-      ball.vy = -168;
-      api.sfx('blip');
-    }
-    ball.vy = Math.min(ball.vy + 400 * dt, 260);
-    ball.grounded = false;
-    ball.x += ball.vx * dt;
-    collide('x');
-    ball.y += ball.vy * dt;
-    collide('y');
+    const dir = ((keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0)) as -1 | 0 | 1;
+    const up = keys.has('up');
+    const events = stepBall(ball, { dir, up, upPressed: up && !upWas }, tile, dt);
+    upWas = up;
+    if (events.includes('jump') || events.includes('rubber')) api.sfx('blip');
 
     // touch special tiles
     const tx = Math.floor(ball.x / T);
@@ -213,8 +181,9 @@
       }
     if (ball.y > map.length * T + 20) die();
 
-    const worldW = map[0].length * T;
-    camX = clamp(ball.x - VW / 2, 0, worldW - VW);
+    // The camera eases after the ball instead of being locked to it, so a
+    // bump against a wall does not jerk the whole screen.
+    camX += (cameraTarget() - camX) * Math.min(1, dt * 9);
   }
 
   /* ------------------------------------------------------------ drawing */

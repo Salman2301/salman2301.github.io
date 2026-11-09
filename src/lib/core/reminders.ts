@@ -1,8 +1,9 @@
 import { derived, get } from 'svelte/store';
 import { notes, noteSpace, titleOf } from '../widgets/notes/store';
-import { parseDate } from './dates';
+import { parseDate, ymd } from './dates';
 import { datesIn } from './mentions';
 import { notify } from './notify';
+import { occurrences, parseRepeat } from './repeat';
 import { persisted } from './storage';
 import { projectOf, tasks } from './tasks';
 
@@ -23,13 +24,32 @@ export interface Reminder {
   /** The space the task or note is in. */
   projectId: string;
   done: boolean;
+  /** Set on a repeating task: the rule text ("every day"). */
+  repeat?: string;
+  /**
+   * A later time of a repeating task, shown ahead in the calendar. Only the
+   * task's real due date raises an alert or shows in the Reminders list.
+   */
+  upcoming?: boolean;
 }
+
+/** How far ahead the calendar shows the later times of repeating tasks. */
+const REPEAT_AHEAD_DAYS = 400;
 
 export const reminders = derived([tasks, notes], ([$tasks, $notes]) => {
   const out: Reminder[] = [];
   for (const t of $tasks) {
     if (!t.due) continue;
-    out.push({ kind: 'task', id: t.id, day: t.due.slice(0, 10), time: t.due.slice(11) || undefined, label: `#${t.no} ${t.text}`, projectId: projectOf(t), done: t.done });
+    const base = { kind: 'task' as const, id: t.id, label: `#${t.no} ${t.text}`, projectId: projectOf(t), done: t.done, repeat: t.repeat };
+    out.push({ ...base, day: t.due.slice(0, 10), time: t.due.slice(11) || undefined });
+    const rule = t.repeat && !t.done ? parseRepeat(t.repeat) : null;
+    if (!rule) continue;
+    const today = new Date();
+    const until = ymd(new Date(today.getFullYear(), today.getMonth(), today.getDate() + REPEAT_AHEAD_DAYS));
+    const max = rule.unit === 'day' && !rule.days ? 120 : 160;
+    for (const d of occurrences(rule, t.due, until, max).slice(1)) {
+      out.push({ ...base, day: d.slice(0, 10), time: d.slice(11) || undefined, upcoming: true });
+    }
   }
   for (const n of $notes) {
     for (const d of new Set(datesIn(n.body))) {
@@ -67,7 +87,7 @@ function check() {
   const now = Date.now();
   const seen = new Set(get(fired));
   const due = get(reminders).filter((r) => {
-    if (r.done) return false;
+    if (r.done || r.upcoming) return false;
     const at = fireTime(r);
     return at <= now && now - at < GRACE_MS && !seen.has(`${r.kind}:${r.id}@${r.day}${r.time ?? ''}`);
   });

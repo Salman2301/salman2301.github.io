@@ -244,6 +244,16 @@ export interface Candidate {
  * task fields, 'task' in notes. Date words that match come first; with
  * `actions`, "pick a date" entries too.
  */
+/** Repeat words offered in task fields: picking one writes it as typed. */
+const REPEAT_WORDS = [
+  { word: 'daily', detail: 'repeat every day' },
+  { word: 'weekdays', detail: 'repeat mon to fri' },
+  { word: 'weekly', detail: 'repeat every week' },
+  { word: 'monthly', detail: 'repeat every month' },
+  { word: 'yearly', detail: 'repeat every year' },
+  { word: 'every', detail: 'repeat: @every monday, @every 2 weeks' },
+];
+
 export function candidates(target: 'note' | 'task', query: string, opts: { actions?: boolean; limit?: number } = {}): Candidate[] {
   const q = query.trim().toLowerCase();
   const limit = opts.limit ?? 9;
@@ -253,6 +263,11 @@ export function candidates(target: 'note' | 'task', query: string, opts: { actio
     detail: value.length > 10 ? `${formatDate(value)}` : `${formatDate(value)} · ${relativeDay(value)}`,
     insert: dateToken(value),
   }));
+  // Repeat words only make sense where tasks are typed (fields that link notes).
+  const repeats: Candidate[] =
+    target === 'note' && q
+      ? REPEAT_WORDS.filter((r) => r.word.startsWith(q)).map((r) => ({ kind: 'date' as const, label: r.word, detail: r.detail, insert: `@${r.word}` }))
+      : [];
   const actions: Candidate[] = [];
   if (opts.actions && q) {
     if ('date'.startsWith(q) || 'pick'.startsWith(q)) actions.push({ kind: 'date', label: 'pick a date…', detail: 'calendar', insert: '', action: 'pick-date' });
@@ -269,7 +284,7 @@ export function candidates(target: 'note' | 'task', query: string, opts: { actio
       .sort((a, b) => Number(a.done) - Number(b.done) || b.no - a.no)
       .map((t) => ({ kind: 'task' as const, label: `#${t.no} ${t.text}`, detail: t.done ? 'done' : 'task', insert: taskToken(t) }));
   }
-  return [...dates, ...actions, ...items].slice(0, limit);
+  return [...dates, ...repeats, ...actions, ...items].slice(0, limit);
 }
 
 /** The @ being typed just before the caret, if any: where it starts and what follows it. */

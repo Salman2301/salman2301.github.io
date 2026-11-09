@@ -18,15 +18,67 @@ export function load<T>(key: string, fallback: T): T {
   }
 }
 
+/** Set while a backup is being restored: late writes from open stores must not undo it. */
+let frozen = false;
+const listeners = new Set<(key: string) => void>();
+
+/** Stop all writes until the page reloads (used right before restoring a backup). */
+export function freezeStorage() {
+  frozen = true;
+}
+
+/** Called with the key whenever a stored value really changes. Returns an unsubscribe. */
+export function onStorageChange(fn: (key: string) => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
 export function save(key: string, value: unknown): void {
+  if (frozen) return;
   try {
-    localStorage.setItem(PREFIX + key, JSON.stringify(value));
+    const json = JSON.stringify(value);
+    if (localStorage.getItem(PREFIX + key) === json) return;
+    localStorage.setItem(PREFIX + key, json);
   } catch {
     /* storage unavailable or full: ignore */
+    return;
   }
+  listeners.forEach((fn) => fn(key));
 }
 
 export function remove(key: string): void {
+  if (frozen) return;
+  try {
+    if (localStorage.getItem(PREFIX + key) === null) return;
+    localStorage.removeItem(PREFIX + key);
+  } catch {
+    return;
+  }
+  listeners.forEach((fn) => fn(key));
+}
+
+/** Every stored key, without the prefix. */
+export function storedKeys(): string[] {
+  try {
+    return Object.keys(localStorage)
+      .filter((k) => k.startsWith(PREFIX))
+      .map((k) => k.slice(PREFIX.length));
+  } catch {
+    return [];
+  }
+}
+
+/** Write a raw JSON string, even while frozen (restoring a backup), without telling listeners. */
+export function writeRaw(key: string, json: string): void {
+  try {
+    localStorage.setItem(PREFIX + key, json);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Remove a key even while frozen, without telling listeners. */
+export function removeRaw(key: string): void {
   try {
     localStorage.removeItem(PREFIX + key);
   } catch {

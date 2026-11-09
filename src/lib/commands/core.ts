@@ -1,4 +1,5 @@
 import { get } from 'svelte/store';
+import { commandHelp, commandNames, getCommand } from '../core/registry';
 import type { CommandDef } from '../core/types';
 import { chooseTheme, cycleThemeHere } from '../core/spaces';
 import { setThemeMode, THEME_MODES, themeNames, type ThemeMode } from '../core/theme';
@@ -13,9 +14,16 @@ const commands: CommandDef[] = [
   {
     name: 'help',
     aliases: ['?', 'commands'],
-    description: 'list every command',
+    description: 'list every command, or explain one: help sync',
+    usage: 'help [<command>]',
     group: 'general',
-    run: (ctx) => ctx.render(Help),
+    complete: (args) => (args.length <= 1 ? commandNames() : []),
+    run: (ctx) => {
+      if (!ctx.args[0]) return ctx.render(Help);
+      const cmd = getCommand(ctx.args[0]);
+      if (!cmd) return ctx.print(`no command called "${ctx.args[0]}". Type "help" to list them.`, 'error');
+      ctx.print(commandHelp(cmd));
+    },
   },
   {
     name: 'whoami',

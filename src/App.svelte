@@ -8,6 +8,8 @@
   import { startScreensaver } from './lib/core/screensaver';
   import { cycleThemeHere } from './lib/core/spaces';
   import { startScreenTime } from './lib/core/screentime';
+  import { startPwa } from './lib/core/pwa';
+  import { startSync } from './lib/core/sync';
   import {
     closePane,
     focusNeighbour,
@@ -123,6 +125,8 @@
   onMount(() => {
     startReminders();
     startScreenTime();
+    startPwa();
+    startSync();
   });
 </script>
 

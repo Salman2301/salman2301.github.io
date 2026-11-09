@@ -33,7 +33,7 @@
       {/each}
     </ul>
   {/each}
-  <p class="foot">tab completes · up/down history · ctrl+c stops · ctrl+l clears · chain with &&</p>
+  <p class="foot">tab completes · up/down history · ctrl+c stops · ctrl+l clears · chain with && · <b>command --help</b> explains one · <b>issue</b> reports a problem</p>
 </div>
 
 <style>

@@ -75,3 +75,11 @@ export function commandNames(includeHidden = false): string[] {
     .flatMap((c) => [c.name, ...(c.aliases ?? [])])
     .sort();
 }
+
+/** What `<command> --help` prints: usage, description, aliases and the long help. */
+export function commandHelp(cmd: CommandDef): string {
+  const lines = [`usage: ${cmd.usage ?? cmd.name}`, '', cmd.description];
+  if (cmd.aliases?.length) lines.push(`also: ${cmd.aliases.join(', ')}`);
+  if (cmd.help) lines.push('', cmd.help.replace(/^\s*\n/, '').trimEnd());
+  return lines.join('\n');
+}

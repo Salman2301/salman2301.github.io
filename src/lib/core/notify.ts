@@ -27,14 +27,23 @@ export function notify(title: string, opts: NotifyOptions = {}) {
   toasts.update((t) => [...t.slice(-4), { id, title, body: opts.body, tone: opts.tone ?? 'info' }]);
   setTimeout(() => dismiss(id), opts.durationMs ?? 5000);
   if (opts.sound) sfx('chime');
-  if (opts.system) {
-    try {
-      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
-        new Notification(title, { body: opts.body, icon: '/favicon.ico' });
-      }
-    } catch {
-      /* ignore */
-    }
+  if (opts.system) void systemNotification(title, opts.body);
+}
+
+/**
+ * A system notification while the site is in the background. Goes through
+ * the service worker when there is one (the only way on Android, and the
+ * click brings the site forward), else the plain Notification API.
+ */
+async function systemNotification(title: string, body?: string) {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
+    const options = { body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png', tag: title };
+    const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : undefined;
+    if (reg) await reg.showNotification(title, options);
+    else new Notification(title, options);
+  } catch {
+    /* ignore */
   }
 }
 
