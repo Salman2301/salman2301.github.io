@@ -209,10 +209,21 @@ export class TyperRun {
   private pickText(kind: WordKind, weights: number[]): string {
     if (kind === 'clear') return pick(CLEAR_WORDS);
     if (kind === 'slow') return pick(SLOW_WORDS);
-    const onScreen = new Set(this.words.map((w) => w.text));
     let text = '';
-    for (let tries = 0; tries < 8 && (!text || onScreen.has(text)); tries++) text = pick(TIERS[weightedIndex(weights)]);
+    for (let tries = 0; tries < 12 && (!text || this.clashes(text)); tries++) text = pick(TIERS[weightedIndex(weights)]);
     return text;
+  }
+
+  /**
+   * True when text and a word on screen could be mistaken while typing, like
+   * "git log" and "git log --oneline": one would always steal the other's lock.
+   */
+  private clashes(text: string): boolean {
+    const t = lower(text);
+    return this.words.some((w) => {
+      const o = lower(w.text);
+      return o.startsWith(t) || t.startsWith(o);
+    });
   }
 
   /** Try a few slots and keep the one farthest from words still near the top. */
@@ -285,6 +296,9 @@ export class TyperRun {
     this.emit('breach');
     if (this.lives <= 0) {
       this.over = true;
+      if (this.target) this.target.typed = 0;
+      this.target = null;
+      this.showBanner('base breached', this.summary(), Infinity);
       this.emit('over');
     }
   }
