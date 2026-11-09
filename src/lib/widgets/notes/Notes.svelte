@@ -4,6 +4,10 @@
   import { renderMarkdown, toggleTask } from './markdown';
   import { createNote, deleteNote, notes, sortNotes, timeAgo, titleOf, togglePin, updateNote } from './store';
   import DatePicker from '../../ui/DatePicker.svelte';
+  import { mention } from '../../ui/mention';
+  import { dateToken, openMention, resolveForHtml, type MentionKind } from '../../core/mentions';
+  import { friendlyDate, parseDate, relativeDay } from '../../core/dates';
+  import { projectOf, projects, setActiveTask, tasks, toggleTask as toggleTaskDone } from '../../core/tasks';
 
   export let paneId: string;
   export let focused = false;
@@ -41,7 +45,7 @@
     draft = current.body;
     saved = true;
   }
-  $: html = mode === 'edit' ? '' : renderMarkdown(draft);
+  $: html = mode === 'edit' ? '' : renderMarkdown(resolveForHtml(draft, $notes, $tasks));
   $: words = draft.trim() ? draft.trim().split(/\s+/).length : 0;
 
   function flush() {
@@ -140,16 +144,162 @@
     await replaceSelection(() => text, len, len - span);
   }
 
+  /** The date picker writes [@date: 2026-11-28] or [@time: 2026-11-28 15:20]. */
   function pickDate(e: CustomEvent<string>) {
     pickerOpen = false;
-    if (e.detail) insertAtCaret(e.detail);
+    if (e.detail) insertAtCaret(`${dateToken(e.detail)} `);
     textarea?.focus();
   }
 
+  /** Opened from the @ list: "pick a date…" / "pick date and time…". */
   function openPicker(withTime: boolean) {
     pickerTime = withTime;
-    pickerOpen = !(pickerOpen && pickerTime === withTime);
+    pickerOpen = true;
   }
+
+  // In a note, @ offers tasks and dates, and can open the date picker.
+  const mentionOpts = { target: 'task' as const, onAction: (a: 'pick-date' | 'pick-time') => openPicker(a === 'pick-time') };
+
+  /* ------------------------------------------ chips in the preview */
+
+  // Hovering a chip shows a card with details and actions; right-click (or
+  // Shift+F10 / the menu key on a focused chip) pins it open.
+  interface Card {
+    kind: MentionKind;
+    id: string;
+    ref: string;
+    x: number;
+    y: number;
+    up: boolean;
+    pinned: boolean;
+  }
+  let card: Card | null = null;
+  let cardEl: HTMLDivElement;
+  let showTimer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const chipOf = (e: Event) => (e.target as HTMLElement | null)?.closest?.<HTMLElement>('.mention[data-kind]') ?? null;
+
+  function cardFor(chip: HTMLElement, pinned: boolean): Card {
+    const r = chip.getBoundingClientRect();
+    const up = r.bottom + 190 > window.innerHeight;
+    return {
+      kind: chip.dataset.kind as MentionKind,
+      id: chip.dataset.id ?? '',
+      ref: chip.dataset.ref ?? '',
+      x: Math.max(8, Math.min(r.left, window.innerWidth - 288)),
+      y: up ? r.top - 6 : r.bottom + 6,
+      up,
+      pinned,
+    };
+  }
+
+  function scheduleHide() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      if (card && !card.pinned) card = null;
+    }, 220);
+  }
+
+  function onPreviewOver(e: MouseEvent) {
+    const chip = chipOf(e);
+    if (!chip) return;
+    if (hideTimer) clearTimeout(hideTimer);
+    if (card?.pinned) return;
+    if (showTimer) clearTimeout(showTimer);
+    showTimer = setTimeout(() => (card = cardFor(chip, false)), 260);
+  }
+
+  function onPreviewOut(e: MouseEvent) {
+    if (!chipOf(e)) return;
+    if (showTimer) clearTimeout(showTimer);
+    if (card && !card.pinned) scheduleHide();
+  }
+
+  function onPreviewMenu(e: MouseEvent) {
+    const chip = chipOf(e);
+    if (!chip) return;
+    e.preventDefault();
+    if (showTimer) clearTimeout(showTimer);
+    card = cardFor(chip, true);
+  }
+
+  function onPreviewKey(e: KeyboardEvent) {
+    const chip = chipOf(e);
+    if (!chip) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      openMention(chip.dataset.kind as MentionKind, chip.dataset.id ?? '');
+    } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault();
+      card = cardFor(chip, true);
+      tick().then(() => cardEl?.querySelector<HTMLElement>('button')?.focus());
+    }
+  }
+
+  // Keyboard: focusing a chip shows its card too; Tab moves on into the card.
+  function onPreviewFocus(e: FocusEvent) {
+    const chip = chipOf(e);
+    if (!chip || card?.pinned) return;
+    if (hideTimer) clearTimeout(hideTimer);
+    card = cardFor(chip, false);
+  }
+
+  function onPreviewBlur(e: FocusEvent) {
+    if (!chipOf(e) || !card || card.pinned) return;
+    if (cardEl?.contains(e.relatedTarget as Node)) return;
+    scheduleHide();
+  }
+
+  function onCardFocusOut(e: FocusEvent) {
+    if (card && !card.pinned && !cardEl?.contains(e.relatedTarget as Node)) scheduleHide();
+  }
+
+  function onWindowDown(e: PointerEvent) {
+    if (card?.pinned && !cardEl?.contains(e.target as Node)) card = null;
+  }
+
+  function onWindowKey(e: KeyboardEvent) {
+    if (card && e.key === 'Escape') card = null;
+  }
+
+  $: cardTask = card?.kind === 'task' ? $tasks.find((t) => t.id === card?.id) ?? null : null;
+  $: cardNote = card?.kind === 'note' ? $notes.find((n) => n.id === card?.id) ?? null : null;
+  $: cardProject = cardTask ? $projects.find((p) => p.id === projectOf(cardTask!))?.name ?? 'Inbox' : '';
+
+  function longDate(value: string): string {
+    const d = parseDate(value);
+    if (!d) return value;
+    const day = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return value.length > 10 ? `${day} · ${value.slice(11)}` : day;
+  }
+
+  function cardOpen() {
+    if (!card) return;
+    openMention(card.kind, card.id);
+    card = null;
+  }
+
+  function cardToggle() {
+    if (cardTask) toggleTaskDone(cardTask.id);
+  }
+
+  function cardFocus() {
+    if (!cardTask) return;
+    setActiveTask(cardTask.id);
+    card = null;
+  }
+
+  async function cardCopy() {
+    if (!card) return;
+    try {
+      await navigator.clipboard.writeText(card.kind === 'date' ? `[@${card.id.length > 10 ? 'time' : 'date'}: ${card.id}]` : card.ref);
+    } catch {
+      /* clipboard blocked */
+    }
+    card = null;
+  }
+
 
   /* ----------------------------------------------- split scroll sync */
 
@@ -192,6 +342,12 @@
 
   function onPreviewClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
+    const link = target.closest<HTMLElement>('[data-kind][data-id]');
+    if (link) {
+      e.preventDefault();
+      openMention(link.dataset.kind as MentionKind, link.dataset.id ?? '');
+      return;
+    }
     if (target instanceof HTMLInputElement && target.type === 'checkbox') {
       e.preventDefault();
       const boxes = Array.from((e.currentTarget as HTMLElement).querySelectorAll('input[type="checkbox"]'));
@@ -241,6 +397,8 @@
   });
 </script>
 
+<svelte:window on:pointerdown|capture={onWindowDown} on:keydown={onWindowKey} />
+
 <div class="notes" bind:clientWidth={width} data-pane={paneId}>
   {#if showSidebar}
     <aside class="side" class:overlay={narrow}>
@@ -277,17 +435,6 @@
           <button class:on={mode === m} on:click={() => setMode(m)}>{m}</button>
         {/each}
       </div>
-      {#if current && mode !== 'preview'}
-        <div class="date-wrap">
-          <button class="txt" data-picker-toggle title="Insert a date at the cursor" aria-expanded={pickerOpen && !pickerTime} on:click={() => openPicker(false)}>date</button>
-          <button class="txt" data-picker-toggle title="Insert a date and time at the cursor" aria-expanded={pickerOpen && pickerTime} on:click={() => openPicker(true)}>time</button>
-          {#if pickerOpen}
-            <div class="date-pop">
-              <DatePicker withTime={pickerTime} on:pick={pickDate} on:close={() => (pickerOpen = false)} />
-            </div>
-          {/if}
-        </div>
-      {/if}
       {#if current}
         <button class="txt" title="Pin to the top" on:click={() => togglePin(current.id)}>{current.pinned ? 'unpin' : 'pin'}</button>
         <button class="txt" title="Download as .md" on:click={exportNote}>export</button>
@@ -297,22 +444,45 @@
 
     {#if current}
       <div class="panes mode-{mode}">
+        {#if pickerOpen && mode !== 'preview'}
+          <div class="date-pop at-editor">
+            <DatePicker withTime={pickerTime} on:pick={pickDate} on:close={() => (pickerOpen = false)} />
+          </div>
+        {/if}
         {#if mode !== 'preview'}
           <textarea
             bind:this={textarea}
+            use:mention={mentionOpts}
             bind:value={draft}
             on:input={onEdit}
             on:keydown={onKeyDown}
             on:scroll={() => syncScroll('edit')}
             on:blur={flush}
             spellcheck="false"
-            placeholder="# Title&#10;&#10;Write markdown here..."
+            placeholder="# Title&#10;&#10;Write markdown here. Type @ for a task, @time, @date or @tmrw."
             aria-label="Note editor"
           />
         {/if}
         {#if mode !== 'edit'}
-          <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-          <article class="md" bind:this={preview} on:scroll={() => syncScroll('preview')} on:click={onPreviewClick}>{@html html}</article>
+          <!-- Chips are focusable; focusin/focusout below give keyboard users the same card as hover. -->
+          <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions a11y-mouse-events-have-key-events -->
+          <article
+            class="md"
+            bind:this={preview}
+            on:scroll={() => {
+              syncScroll('preview');
+              if (card) card = null;
+            }}
+            on:click={onPreviewClick}
+            on:mouseover={onPreviewOver}
+            on:mouseout={onPreviewOut}
+            on:focusin={onPreviewFocus}
+            on:focusout={onPreviewBlur}
+            on:contextmenu={onPreviewMenu}
+            on:keydown={onPreviewKey}
+          >
+            {@html html}
+          </article>
         {/if}
       </div>
       <div class="foot">
@@ -327,6 +497,57 @@
     {/if}
   </section>
 
+{#if card}
+    <div
+      class="mcard"
+      class:up={card.up}
+      bind:this={cardEl}
+      style="left:{card.x}px;top:{card.y}px"
+      role="dialog"
+      aria-label="Link details"
+      on:mouseenter={() => hideTimer && clearTimeout(hideTimer)}
+      on:mouseleave={() => card && !card.pinned && scheduleHide()}
+      on:focusin={() => hideTimer && clearTimeout(hideTimer)}
+      on:focusout={onCardFocusOut}
+    >
+      {#if card.kind === 'task'}
+        {#if cardTask}
+          <div class="mc-head">
+            <span class="state" class:done={cardTask.done} aria-hidden="true" />
+            <span class:struck={cardTask.done}><b>#{cardTask.no}</b> {cardTask.text}</span>
+          </div>
+          <div class="mc-meta">
+            <span class="badge" class:done={cardTask.done}>{cardTask.done ? 'completed' : 'active'}</span>
+            {cardProject}{#if cardTask.due} · due {friendlyDate(cardTask.due)}{/if}
+          </div>
+          <div class="mc-actions">
+            <button on:click={cardOpen}>open task</button>
+            <button on:click={cardToggle}>{cardTask.done ? 'mark active' : 'mark done'}</button>
+            {#if !cardTask.done}<button on:click={cardFocus}>focus</button>{/if}
+          </div>
+        {:else}
+          <div class="mc-head">task {card.ref} no longer exists</div>
+        {/if}
+      {:else if card.kind === 'date'}
+        {#if card.id}
+          <div class="mc-head">{longDate(card.id)}</div>
+          <div class="mc-meta"><span class="badge">{relativeDay(card.id)}</span> reminder, shown in the calendar</div>
+          <div class="mc-actions">
+            <button on:click={cardOpen}>open in calendar</button>
+            <button on:click={cardCopy}>copy</button>
+          </div>
+        {:else}
+          <div class="mc-head">"{card.ref}" is not a date</div>
+          <div class="mc-meta">use [@date: 2026-11-28] or [@time: 2026-11-28 15:20]</div>
+        {/if}
+      {:else if cardNote}
+        <div class="mc-head">{titleOf(cardNote)}</div>
+        <div class="mc-actions"><button on:click={cardOpen}>open note</button></div>
+      {:else}
+        <div class="mc-head">note "{card.ref}" not found</div>
+      {/if}
+    </div>
+  {/if}
   <input class="hidden" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" bind:this={fileInput} on:change={importFile} />
 </div>
 
@@ -554,11 +775,6 @@
     text-align: center;
     color: var(--t1);
   }
-  .date-wrap {
-    position: relative;
-    display: inline-flex;
-    gap: 2px;
-  }
   .date-pop {
     position: absolute;
     top: calc(100% + 6px);
@@ -690,5 +906,186 @@
       min-height: 28px;
       padding: 0 6px;
     }
+  }
+  .panes {
+    position: relative;
+  }
+  .date-pop.at-editor {
+    top: 8px;
+    right: 12px;
+  }
+  /* Chips in the preview: [@task: #12], [@date: ...], [@time: ...], [@note: ...] */
+  :global(.md .mention) {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--hl1) 35%, transparent);
+    background: color-mix(in srgb, var(--hl1) 10%, transparent);
+    color: var(--t2);
+    line-height: 1.5;
+    vertical-align: baseline;
+    cursor: pointer;
+    outline: none;
+  }
+  :global(.md .mention:hover),
+  :global(.md .mention:focus-visible) {
+    border-color: var(--hl1);
+    color: var(--hl1);
+  }
+  :global(.md .mention .ico) {
+    position: relative;
+    flex: none;
+    box-sizing: border-box;
+  }
+  /* task: a circle, filled with a tick once done */
+  :global(.md .mention.task .ico) {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid var(--hl1);
+    border-radius: 50%;
+  }
+  :global(.md .mention.task.done .ico) {
+    background: var(--hl1);
+  }
+  :global(.md .mention.task.done .ico::after) {
+    content: '';
+    position: absolute;
+    left: 2.2px;
+    top: 0.6px;
+    width: 2.5px;
+    height: 5px;
+    border: solid var(--bg1);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+  :global(.md .mention.task.done .lbl) {
+    color: var(--t1);
+    text-decoration: line-through;
+  }
+  /* date: a little calendar page; time: a clock */
+  :global(.md .mention.date .ico) {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid var(--hl1);
+    border-top-width: 3px;
+    border-radius: 2px;
+  }
+  :global(.md .mention.date.time .ico) {
+    border-top-width: 1.5px;
+    border-radius: 50%;
+  }
+  :global(.md .mention.date.time .ico::after) {
+    content: '';
+    position: absolute;
+    left: 3px;
+    top: 1px;
+    width: 2.5px;
+    height: 3px;
+    border: solid var(--hl1);
+    border-width: 0 0 1.5px 1.5px;
+  }
+  :global(.md .mention .rel) {
+    color: var(--t1);
+    font-size: 0.85em;
+  }
+  /* note: a page */
+  :global(.md .mention.note) {
+    border-color: color-mix(in srgb, var(--t1) 40%, transparent);
+    background: color-mix(in srgb, var(--bg2) 35%, transparent);
+  }
+  :global(.md .mention.note .ico) {
+    width: 8px;
+    height: 10px;
+    border: 1.5px solid var(--t1);
+    border-radius: 1px;
+  }
+  :global(.md .mention.missing) {
+    border-style: dashed;
+    border-color: var(--t1);
+    background: none;
+    color: var(--t1);
+  }
+  :global(.md .mention.missing .ico) {
+    border-color: var(--t1);
+    background: none;
+  }
+
+  /* The card that hovering (or right-clicking) a chip opens. */
+  .mcard {
+    position: fixed;
+    z-index: 120;
+    width: 280px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border: 1px solid var(--bg2);
+    border-radius: 10px;
+    background: var(--bg1);
+    color: var(--t2);
+    font-size: 12px;
+    box-shadow: 0 16px 40px -14px color-mix(in srgb, var(--bg2) 80%, transparent);
+  }
+  .mcard.up {
+    transform: translateY(-100%);
+  }
+  .mc-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .state {
+    flex: none;
+    width: 12px;
+    height: 12px;
+    margin-top: 3px;
+    border: 1.5px solid var(--hl1);
+    border-radius: 50%;
+    box-sizing: border-box;
+  }
+  .state.done {
+    background: var(--hl1);
+  }
+  .struck {
+    color: var(--t1);
+    text-decoration: line-through;
+  }
+  .mc-meta {
+    color: var(--t1);
+  }
+  .badge {
+    display: inline-block;
+    margin-right: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid var(--hl1);
+    color: var(--hl1);
+    font-size: 11px;
+  }
+  .badge.done {
+    border-color: var(--t1);
+    color: var(--t1);
+  }
+  .mc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .mc-actions button {
+    padding: 2px 9px;
+    border: 1px solid var(--bg2);
+    border-radius: 6px;
+    color: var(--t2);
+    font-size: 12px;
+  }
+  .mc-actions button:hover,
+  .mc-actions button:focus-visible {
+    border-color: var(--hl1);
+    color: var(--hl1);
+    outline: none;
   }
 </style>

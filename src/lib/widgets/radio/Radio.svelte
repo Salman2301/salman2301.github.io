@@ -27,7 +27,7 @@
 
 <div class="radio">
   <header>
-    <p class="kicker">SomaFM · free and ad-free</p>
+    <p class="kicker">free radio</p>
     <h2>{s.station.name}</h2>
     <p class="note">{s.station.note}</p>
   </header>
@@ -58,7 +58,7 @@
   </ul>
 
   <p class="credit">
-    Streams by <a href="https://somafm.com" target="_blank" rel="noopener noreferrer">SomaFM</a>, listener-supported. Consider a donation if you listen a lot.
+    Streamed live from <a href={s.station.site} target="_blank" rel="noopener noreferrer">{s.station.name}</a>. Stations rely on listeners, so consider supporting the ones you enjoy.
   </p>
 </div>
 

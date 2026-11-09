@@ -2,6 +2,11 @@
   import { onDestroy } from 'svelte';
   import { MODE_LABEL, fmt, pomodoro, pomodoroStats, remainingMs, todayKey, toggle, reset } from '../widgets/pomodoro/engine';
   import { openWidget } from '../core/workspace';
+  import { ymd } from '../core/dates';
+  import { openMention } from '../core/mentions';
+  import { calendarList, inList, reminders, type Reminder } from '../core/reminders';
+  import { projects } from '../core/tasks';
+  import { calendarRequest } from '../core/ui';
 
   /** Opened from the clock in the status bar. Closes on Escape or an outside click. */
   export let open = false;
@@ -14,6 +19,8 @@
   // the month shown in the calendar, and the date we are looking at
   let viewYear = now.getFullYear();
   let viewMonth = now.getMonth();
+  /** The day whose reminders are listed under the calendar, "YYYY-MM-DD". */
+  let selected = ymd(now);
 
   $: if (open) start();
   $: if (!open) stop();
@@ -23,6 +30,7 @@
     now = new Date();
     viewYear = now.getFullYear();
     viewMonth = now.getMonth();
+    selected = ymd(now);
     timer = setInterval(() => (now = new Date()), 1000);
   }
   function stop() {
@@ -44,6 +52,32 @@
   const isToday = (d: number | null) =>
     d !== null && d === now.getDate() && viewMonth === now.getMonth() && viewYear === now.getFullYear();
 
+  const keyOf = (d: number) => `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+  // Reminders in the chosen list, grouped by day.
+  $: shown = inList($reminders, $calendarList);
+  $: byDay = shown.reduce<Record<string, Reminder[]>>((m, r) => ((m[r.day] ??= []).push(r), m), {});
+  $: agenda = byDay[selected] ?? [];
+  // A list that was deleted falls back to all lists.
+  $: if ($calendarList !== 'all' && !$projects.some((p) => p.id === $calendarList)) calendarList.set('all');
+
+  // A date link in a note opens the calendar on that day.
+  $: if ($calendarRequest) showDay($calendarRequest);
+  function showDay(day: string) {
+    calendarRequest.set(null);
+    open = true;
+    start();
+    const [y, m] = day.split('-').map(Number);
+    viewYear = y;
+    viewMonth = m - 1;
+    selected = day;
+  }
+
+  function openReminder(r: Reminder) {
+    openMention(r.kind, r.id);
+    open = false;
+  }
+
   function shift(delta: number) {
     const d = new Date(viewYear, viewMonth + delta, 1);
     viewYear = d.getFullYear();
@@ -52,6 +86,7 @@
   function goToday() {
     viewYear = now.getFullYear();
     viewMonth = now.getMonth();
+    selected = ymd(now);
   }
 
   function onWindowDown(e: PointerEvent) {
@@ -92,8 +127,43 @@
       <div class="grid">
         {#each WEEKDAYS as w}<span class="wd">{w}</span>{/each}
         {#each cells as d}
-          <span class="day" class:blank={d === null} class:today={isToday(d)}>{d ?? ''}</span>
+          {#if d === null}
+            <span class="day blank" />
+          {:else}
+            <button
+              class="day"
+              class:today={isToday(d)}
+              class:picked={keyOf(d) === selected}
+              class:has={!!byDay[keyOf(d)]}
+              aria-label="{keyOf(d)}{byDay[keyOf(d)] ? `, ${byDay[keyOf(d)].length} reminders` : ''}"
+              on:click={() => (selected = keyOf(d))}>{d}</button
+            >
+          {/if}
         {/each}
+      </div>
+
+      <div class="agenda">
+        <div class="agenda-head">
+          <span class="agenda-day">{new Date(`${selected}T00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+          <select bind:value={$calendarList} aria-label="Which list to show">
+            <option value="all">all lists</option>
+            {#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+          </select>
+        </div>
+        {#if agenda.length}
+          <ul>
+            {#each agenda as r (r.kind + r.id + r.day + (r.time ?? ''))}
+              <li>
+                <button class="rem" class:done={r.done} on:click={() => openReminder(r)} title={r.kind === 'task' ? 'Open this task' : 'Open this note'}>
+                  <span class="rtime">{r.time ?? (r.kind === 'note' ? 'note' : 'all day')}</span>
+                  <span class="rlabel">{r.label}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="none">no reminders. Type @tmrw or @monday in a task or a note.</p>
+        {/if}
       </div>
     </div>
 
@@ -195,10 +265,98 @@
   .day.blank {
     visibility: hidden;
   }
+  .day {
+    position: relative;
+    color: var(--t2);
+  }
+  button.day:hover {
+    background: color-mix(in srgb, var(--bg2) 60%, transparent);
+  }
+  .day.picked {
+    box-shadow: inset 0 0 0 1px var(--hl1);
+  }
+  .day.has::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    left: 50%;
+    width: 4px;
+    height: 4px;
+    margin-left: -2px;
+    border-radius: 50%;
+    background: var(--hl1);
+  }
   .day.today {
     background: var(--hl1);
     color: var(--bg1);
     font-weight: 700;
+  }
+  .day.today.has::after {
+    background: var(--bg1);
+  }
+  .agenda {
+    margin-top: 10px;
+  }
+  .agenda-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .agenda-day {
+    color: var(--t2);
+    font-weight: 600;
+  }
+  .agenda select {
+    max-width: 140px;
+    padding: 1px 4px;
+    border: 1px solid var(--bg2);
+    border-radius: 4px;
+    background: var(--bg1);
+    color: var(--t2);
+    font: inherit;
+    font-size: 11px;
+  }
+  .agenda ul {
+    max-height: 130px;
+    overflow: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .rem {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    text-align: left;
+    color: var(--t2);
+  }
+  .rem:hover {
+    background: color-mix(in srgb, var(--bg2) 60%, transparent);
+    color: var(--hl1);
+  }
+  .rem.done .rlabel {
+    text-decoration: line-through;
+    color: var(--t1);
+  }
+  .rtime {
+    flex: 0 0 auto;
+    min-width: 44px;
+    color: var(--t1);
+    font-variant-numeric: tabular-nums;
+  }
+  .rlabel {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .none {
+    color: var(--t1);
+    font-size: 11px;
   }
   .timer {
     display: flex;

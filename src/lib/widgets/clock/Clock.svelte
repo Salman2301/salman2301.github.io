@@ -126,7 +126,7 @@
   <div class="clock-body">
     <div class="face-area" bind:clientWidth={fw} bind:clientHeight={fh}>
       {#if face === 'analog'}
-        <Dial size={dialSize} />
+        <Dial size={dialSize} hour24={!hour12} />
       {:else}
         <div class="readout" style="font-size:{fontSize}px" role="timer" aria-label="{hh}:{mm}:{ss}{hour12 ? ` ${period}` : ''}">
           <span class="hm">{hh}<span class="colon">:</span>{mm}</span>

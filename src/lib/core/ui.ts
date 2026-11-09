@@ -9,3 +9,9 @@ export const templatePickerOpen = writable(false);
  * reset it to null once handled.
  */
 export const openOverlay = writable<string | null>(null);
+
+/**
+ * Ask the status bar calendar to open on a date ("YYYY-MM-DD"), e.g. from a
+ * date link in a note. The calendar resets it to null once handled.
+ */
+export const calendarRequest = writable<string | null>(null);

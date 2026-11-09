@@ -25,12 +25,14 @@ Type `help` in the terminal to see every command.
 - **Tiling panes**: split, resize (drag or keyboard), maximize, drag a pane header onto another pane to swap them, and turn any pane into any widget from its title menu.
 - **Templates**: pick a layout with `Alt+T` or `templates`, or save your own (`template save <name>`). More templates appear automatically as more widgets are added.
 - **Widgets**: the terminal, pomodoro (`pomodoro`), tasks (`todo`), Hacker News (`news`), markdown notes (`notes`, edit / split / preview, import and export .md) and the arcade.
+  - **Tasks** (`todo`): several projects (lists), sub-tasks, notes on tasks and projects, a number for every task (`#12`, `todo focus 12`). Type `@` in a task or a note to link the other one, written as `[@task: #123]` or `[@note: Title]`; click a link to jump to it. Dates are written `[@date: 2026-11-28]` and `[@time: 2026-11-28 15:20]` (`@date`, `@time`, `@today`, `@tmrw`, `@monday` … `@sunday`, `@nextweek`, or pick one from a calendar). In a task a date sets its due date (`todo add pay rent @friday` works too); in a note it adds a reminder. The notes preview shows these as chips: tasks with a completed / active marker, dates with "in 3 days"; hover or right-click a chip for details and actions. Reminders show in the status-bar calendar, for all lists or one, and pop a toast when due.
+  - **Calendar** (`calendar`, `cal week`): year, month, week and day views of your reminders. Pinch (touch or trackpad) or ctrl+scroll to zoom between them with an animated zoom into the spot you pinched; swipe or ←/→ for the next page. Click an hour in the day view to add a reminder there.
   - **Clock** (`clock`): digital or analog, 12/24h, world clocks (`clock add Asia/Tokyo`).
   - **Timer** (`timer 5m`, `stopwatch`): stopwatch with laps, and a countdown that still rings when its pane is closed.
-  - **Radio** (`radio`, `radio list`): free, ad-free ambient and lounge stations from [SomaFM](https://somafm.com), drawn in your theme. Play and pause from the status bar or with `Alt+P`. **Spotify** (`spotify <link>`) plays playlists with presets.
+  - **Radio** (`radio`, `radio list`): free live stations (FIP, KEXP, Radio Paradise, NTS), drawn in your theme. Play and pause from the status bar or with `Alt+P`. **Spotify** (`spotify <link>`) plays playlists with presets.
   - **Digital Rain** (`open matrix`) and **Embed** (`embed <url>`) for any page that allows it.
 - **Arcade**: Snake, Tetris, Space Impact, Bounce, Car Racing, Brick Breaker, Byte Runner, Typing Defense, Pairs and Sudoku, with saved high scores (`games`, `play sudoku`). WASD or arrows everywhere, Space pauses and resumes, and touch screens get an on-screen pad.
-- **Extras**: 16 themes (`theme`), share links that recreate a layout (`share`), `neofetch`, `hack`, a tmux-style status bar, tab completion with inline suggestions, command chaining with `&&`.
+- **Extras**: 26 themes, including popular VS Code ones (One Dark Pro, GitHub, Night Owl, Monokai Pro, Ayu, Palenight, Cobalt2, Shades of Purple), with a system / dark / light switch in the status bar (`theme system`), share links that recreate a layout (`share`), `neofetch`, `hack`, a tmux-style status bar, tab completion with inline suggestions, command chaining with `&&`.
 
 Everything is saved in your browser's local storage. Nothing is sent to a server.
 

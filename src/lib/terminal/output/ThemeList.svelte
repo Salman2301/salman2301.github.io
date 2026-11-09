@@ -1,23 +1,41 @@
 <script lang="ts">
-  import { themeNames, themes, themeStore, setTheme } from '../../core/theme';
+  import { darkTheme, darkThemes, lightTheme, lightThemes, setTheme, setThemeMode, THEME_MODES, themeMode, themes, themeStore } from '../../core/theme';
+  const GROUPS = [
+    { kind: 'dark', names: darkThemes },
+    { kind: 'light', names: lightThemes },
+  ];
 </script>
 
-<p class="head">Themes (click to apply, or type: theme &lt;name&gt;)</p>
-<div class="list">
-  {#each themeNames as name}
-    <button class:active={$themeStore === name} on:click={() => setTheme(name)}>
-      <span class="swatches">
-        {#each themes[name] as c}<span style="background:{c}" />{/each}
-      </span>
-      {name}
-    </button>
-  {/each}
-</div>
+<p class="head">
+  Mode:
+  {#each THEME_MODES as m}<button class="mode" class:active={$themeMode === m} on:click={() => setThemeMode(m)}>{m}</button>{/each}
+  <span class="muted">· theme system|dark|light · system follows your OS</span>
+</p>
+{#each GROUPS as g (g.kind)}
+  <p class="head">{g.kind} themes (picked: {g.kind === 'dark' ? $darkTheme : $lightTheme})</p>
+  <div class="list">
+    {#each g.names as name}
+      <button class:active={$themeStore === name} on:click={() => setTheme(name)}>
+        <span class="swatches">
+          {#each themes[name] as c}<span style="background:{c}" />{/each}
+        </span>
+        {name}
+      </button>
+    {/each}
+  </div>
+{/each}
 
 <style>
   .head {
     color: var(--t1);
-    margin-bottom: 4px;
+    margin: 6px 0 4px;
+  }
+  .head .mode {
+    display: inline;
+    padding: 0 4px;
+  }
+  .muted {
+    opacity: 0.7;
   }
   .list {
     display: grid;

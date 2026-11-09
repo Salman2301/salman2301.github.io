@@ -1,12 +1,18 @@
-import { derived, get } from 'svelte/store';
+import { derived, get, writable } from 'svelte/store';
+import { resolveDateWord } from './dates';
 import { persisted } from './storage';
 
 /**
  * Tasks shared by the todo widget and the pomodoro: the pomodoro shows the
  * active task and credits finished focus sessions to it.
+ *
+ * Tasks belong to a project (a named list, "Inbox" by default). A task can
+ * have sub-tasks, one level deep, and both projects and tasks can carry notes.
  */
 export interface Task {
   id: string;
+  /** Stable number shown as #n, unique across all tasks and projects. */
+  no: number;
   text: string;
   done: boolean;
   /** Completed pomodoro focus sessions credited to this task. */
@@ -15,9 +21,25 @@ export interface Task {
   spentMs?: number;
   /** Due date: "YYYY-MM-DD" or "YYYY-MM-DD HH:MM". */
   due?: string;
+  /** Project this task belongs to. Missing means the Inbox (tasks made before projects). */
+  projectId?: string;
+  /** Set on a sub-task: the task it belongs to. */
+  parentId?: string;
+  /** Free-form notes. */
+  notes?: string;
   createdAt: number;
   doneAt?: number;
 }
+
+export interface Project {
+  id: string;
+  name: string;
+  notes: string;
+  createdAt: number;
+}
+
+export const INBOX_ID = 'inbox';
+const INBOX: Project = { id: INBOX_ID, name: 'Inbox', notes: '', createdAt: 0 };
 
 /** "1h 05m", "12m", "42s", or "0s" */
 export function formatSpent(ms: number | undefined): string {
@@ -39,17 +61,93 @@ export function isOverdue(due: string | undefined, now = new Date()): boolean {
 
 export const tasks = persisted<Task[]>('tasks:list', []);
 export const activeTaskId = persisted<string | null>('tasks:active', null);
+export const projects = persisted<Project[]>('tasks:projects', [INBOX]);
+/** Last number handed out to a task. */
+const seq = persisted<number>('tasks:seq', 0);
+/** Set to a task id to scroll the todo widget to that task (used by @ links from notes). */
+export const revealTaskId = writable<string | null>(null);
+
+/** Give every task a number, oldest first, if it was saved before numbers existed. */
+function ensureNumbers() {
+  const list = get(tasks);
+  if (list.every((t) => typeof t.no === 'number')) return;
+  let next = Math.max(get(seq), ...list.map((t) => t.no ?? 0));
+  const numbered = new Map<string, number>();
+  for (const t of [...list].sort((a, b) => a.createdAt - b.createdAt)) if (typeof t.no !== 'number') numbered.set(t.id, ++next);
+  tasks.set(list.map((t) => (numbered.has(t.id) ? { ...t, no: numbered.get(t.id)! } : t)));
+  seq.set(next);
+}
+ensureNumbers();
+
+function nextNo(): number {
+  const n = Math.max(get(seq), ...get(tasks).map((t) => t.no ?? 0)) + 1;
+  seq.set(n);
+  return n;
+}
+
+/** The task with this number, if any. */
+export function taskByNo(no: number): Task | undefined {
+  return get(tasks).find((t) => t.no === no);
+}
 
 export const activeTask = derived([tasks, activeTaskId], ([$tasks, $id]) => $tasks.find((t) => t.id === $id && !t.done) ?? null);
 
-function newId() {
-  return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+/** The project a task belongs to (the Inbox when it has none). */
+export function projectOf(task: Task): string {
+  return task.projectId ?? INBOX_ID;
 }
 
-export function addTask(text: string): Task | null {
-  const clean = text.trim();
+function newId(prefix = 't') {
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/**
+ * Add a task. With `parentId` it becomes a sub-task of that task (and joins its
+ * project). Sub-tasks of sub-tasks are not allowed, so that returns null.
+ */
+/**
+ * Pull a reminder date out of task text: a picked date ([@date: 2026-11-10],
+ * [@time: 2026-11-10 09:30], or the older @[label](date:...)) or a typed
+ * date word (@tmrw, @monday, @2026-12-01). The first one becomes the due date, and all are removed.
+ */
+export function extractDue(text: string, now = new Date()): { text: string; due?: string } {
+  let due: string | undefined;
+  const out = text
+    .replace(/@\[[^\]\n]*\]\(date:([\w:.-]+)\)/g, (_, v: string) => {
+      due ??= v.replace('T', ' ');
+      return ' ';
+    })
+    .replace(/\[@(?:date|time):[ \t]*(\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2})?)[ \t]*\]/g, (_, v: string) => {
+      due ??= v;
+      return ' ';
+    })
+    .replace(/(^|\s)@([a-z][\w-]*|\d{4}-\d{2}-\d{2})(?=\s|$)/gi, (m, pre: string, word: string) => {
+      const v = resolveDateWord(word, now);
+      if (!v) return m;
+      due ??= v;
+      return pre;
+    })
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return { text: out, due };
+}
+
+export function addTask(text: string, opts: { projectId?: string; parentId?: string } = {}): Task | null {
+  const { text: clean, due } = extractDue(text);
   if (!clean) return null;
-  const task: Task = { id: newId(), text: clean.slice(0, 200), done: false, pomodoros: 0, createdAt: Date.now() };
+  const parent = opts.parentId ? get(tasks).find((t) => t.id === opts.parentId) : undefined;
+  if (opts.parentId && (!parent || parent.parentId)) return null;
+  const task: Task = {
+    id: newId(),
+    no: nextNo(),
+    text: clean.slice(0, 200),
+    done: false,
+    pomodoros: 0,
+    projectId: parent ? projectOf(parent) : opts.projectId ?? INBOX_ID,
+    createdAt: Date.now(),
+  };
+  if (parent) task.parentId = parent.id;
+  if (due) task.due = due;
   tasks.update((list) => [...list, task]);
   return task;
 }
@@ -64,15 +162,21 @@ export function toggleTask(id: string) {
   }
 }
 
+/** Remove a task and its sub-tasks. */
 export function removeTask(id: string) {
-  tasks.update((list) => list.filter((t) => t.id !== id));
-  if (get(activeTaskId) === id) activeTaskId.set(null);
+  const gone = new Set([id, ...get(tasks).filter((t) => t.parentId === id).map((t) => t.id)]);
+  tasks.update((list) => list.filter((t) => !gone.has(t.id)));
+  if (gone.has(get(activeTaskId) ?? '')) activeTaskId.set(null);
 }
 
 export function renameTask(id: string, text: string) {
-  const clean = text.trim();
+  const { text: clean, due } = extractDue(text);
   if (!clean) return;
-  tasks.update((list) => list.map((t) => (t.id === id ? { ...t, text: clean.slice(0, 200) } : t)));
+  tasks.update((list) => list.map((t) => (t.id === id ? { ...t, text: clean.slice(0, 200), due: due ?? t.due } : t)));
+}
+
+export function setTaskNotes(id: string, notes: string) {
+  tasks.update((list) => list.map((t) => (t.id === id ? { ...t, notes: notes.slice(0, 5000) || undefined } : t)));
 }
 
 export function setActiveTask(id: string | null) {
@@ -96,6 +200,40 @@ export function setDue(id: string, due: string | undefined) {
   tasks.update((list) => list.map((t) => (t.id === id ? { ...t, due: due || undefined } : t)));
 }
 
+/** Remove finished tasks. Open sub-tasks of a finished task stay, as top-level tasks. */
 export function clearDone() {
-  tasks.update((list) => list.filter((t) => !t.done));
+  const done = new Set(get(tasks).filter((t) => t.done).map((t) => t.id));
+  tasks.update((list) =>
+    list
+      .filter((t) => !t.done)
+      .map((t) => (t.parentId && done.has(t.parentId) ? { ...t, parentId: undefined } : t)),
+  );
+}
+
+/* ------------------------------------------------------------- projects */
+
+export function addProject(name: string): Project | null {
+  const clean = name.trim().slice(0, 40);
+  if (!clean) return null;
+  const project: Project = { id: newId('p'), name: clean, notes: '', createdAt: Date.now() };
+  projects.update((list) => [...list, project]);
+  return project;
+}
+
+export function renameProject(id: string, name: string) {
+  const clean = name.trim().slice(0, 40);
+  if (!clean) return;
+  projects.update((list) => list.map((p) => (p.id === id ? { ...p, name: clean } : p)));
+}
+
+export function setProjectNotes(id: string, notes: string) {
+  projects.update((list) => list.map((p) => (p.id === id ? { ...p, notes: notes.slice(0, 5000) } : p)));
+}
+
+/** Delete a project. Its tasks move to the Inbox. The Inbox cannot be deleted. */
+export function removeProject(id: string): boolean {
+  if (id === INBOX_ID || !get(projects).some((p) => p.id === id)) return false;
+  tasks.update((list) => list.map((t) => (projectOf(t) === id ? { ...t, projectId: INBOX_ID } : t)));
+  projects.update((list) => list.filter((p) => p.id !== id));
+  return true;
 }
