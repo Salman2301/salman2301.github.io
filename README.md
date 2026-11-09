@@ -27,7 +27,7 @@ Type `help` in the terminal to see every command.
 - **Widgets**: the terminal, pomodoro (`pomodoro`), tasks (`todo`), Hacker News (`news`), markdown notes (`notes`, edit / split / preview, import and export .md) and the arcade.
   - **Clock** (`clock`): digital or analog, 12/24h, world clocks (`clock add Asia/Tokyo`).
   - **Timer** (`timer 5m`, `stopwatch`): stopwatch with laps, and a countdown that still rings when its pane is closed.
-  - **YouTube** (`yt <link>`, `lofi`), **YouTube Music** (`ytm`) and **Spotify** (`spotify <link>`) players with presets.
+  - **Radio** (`radio`, `radio list`): free, ad-free ambient and lounge stations from [SomaFM](https://somafm.com), drawn in your theme. Play and pause from the status bar or with `Alt+P`. **Spotify** (`spotify <link>`) plays playlists with presets.
   - **Digital Rain** (`open matrix`) and **Embed** (`embed <url>`) for any page that allows it.
 - **Arcade**: Snake, Tetris, Space Impact, Bounce, Car Racing, Brick Breaker, Byte Runner, Typing Defense, Pairs and Sudoku, with saved high scores (`games`, `play sudoku`). WASD or arrows everywhere, Space pauses and resumes, and touch screens get an on-screen pad.
 - **Extras**: 16 themes (`theme`), share links that recreate a layout (`share`), `neofetch`, `hack`, a tmux-style status bar, tab completion with inline suggestions, command chaining with `&&`.

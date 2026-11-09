@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import type { GameApi } from '../../core/types';
-  import { clamp, fitCanvas, heldKeys, rand, readPalette, startLoop, watchPalette, type Palette } from '../kit';
+  import { clamp, fitCanvas, heldKeys, mix, rand, readPalette, startLoop, watchPalette, type Palette } from '../kit';
 
   export let paused = true;
   export let api: GameApi;
@@ -18,7 +18,10 @@
   const centre = (d: number) => VW / 2 + Math.sin(d / 520) * 22 + Math.sin(d / 170) * 6 * Math.min(1, d / 6000);
   const laneX = (d: number, lane: number) => centre(d) - ROAD / 2 + (ROAD / LANES) * (lane + 0.5);
 
-  interface Car { d: number; lane: number; offset: number; speed: number; color: string; passed: boolean }
+  // Other cars: five shades from the theme, none of them the player's accent.
+  const traffic = (p: Palette) => [p.t1, p.t2, mix(p.t1, p.t2, 0.5), mix(p.t1, p.bg2, 0.5), mix(p.t2, p.bg2, 0.5)];
+
+  interface Car { d: number; lane: number; offset: number; speed: number; tone: number; passed: boolean }
   interface Can { d: number; lane: number; kind: 'fuel' | 'nitro' }
 
   let dist = 0;
@@ -38,7 +41,6 @@
   let shake = 0;
   let over = false;
 
-  const TRAFFIC = ['#60a5fa', '#facc15', '#4ade80', '#c084fc', '#f97316', '#e5e7eb'];
   const keys = heldKeys(api);
   $: level = 1 + Math.floor(dist / 4000);
   $: maxSpeed = 95 + level * 8 + (nitro > 0 ? 45 : 0);
@@ -106,7 +108,7 @@
       const ahead = speed > 30 || Math.random() < 0.5;
       cars.push({
         d: dist + (ahead ? VH + 20 : -60), lane, offset: rand(-3, 3),
-        speed: rand(35, 70 + level * 4), color: TRAFFIC[Math.floor(rand(0, TRAFFIC.length))], passed: false,
+        speed: rand(35, 70 + level * 4), tone: Math.floor(rand(0, 5)), passed: false,
       });
     }
     canT -= dt;
@@ -164,14 +166,14 @@
     ctx.globalAlpha = alpha;
     const l = Math.round(px - CAR_W / 2);
     const t = Math.round(py - CAR_H / 2);
-    ctx.fillStyle = '#111';
+    ctx.fillStyle = pal.bg2;
     ctx.fillRect(l - 1, t + 2, 2, 4);
     ctx.fillRect(l + CAR_W - 1, t + 2, 2, 4);
     ctx.fillRect(l - 1, t + CAR_H - 6, 2, 4);
     ctx.fillRect(l + CAR_W - 1, t + CAR_H - 6, 2, 4);
     ctx.fillStyle = color;
     ctx.fillRect(l, t, CAR_W, CAR_H);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = pal.bg1;
     ctx.fillRect(l + 1, t + 3, CAR_W - 2, 3);
     ctx.fillRect(l + 1, t + CAR_H - 5, CAR_W - 2, 2);
     ctx.globalAlpha = 1;
@@ -205,19 +207,19 @@
       const cy = PY - (can.d - dist);
       if (cy < -10 || cy > VH + 10) continue;
       const cx = laneX(can.d, can.lane);
-      ctx.fillStyle = can.kind === 'fuel' ? '#facc15' : '#22d3ee';
+      ctx.fillStyle = can.kind === 'fuel' ? pal.t2 : pal.hl1;
       ctx.fillRect(cx - 3, cy - 4, 6, 8);
-      ctx.fillStyle = '#111';
+      ctx.fillStyle = pal.bg1;
       ctx.font = 'bold 5px "JetBrains Mono", monospace';
       ctx.fillText(can.kind === 'fuel' ? 'F' : 'N', cx - 1.5, cy + 2);
     }
     for (const c of cars) {
       const cy = PY - (c.d - dist);
-      if (cy > -20 && cy < VH + 20) car(laneX(c.d, c.lane) + c.offset, cy, c.color);
+      if (cy > -20 && cy < VH + 20) car(laneX(c.d, c.lane) + c.offset, cy, traffic(pal)[c.tone]);
     }
     if (!over) car(x, PY, pal.hl1, crashT > 0 || (invuln > 0 && Math.floor(invuln * 10) % 2) ? 0.4 : 1);
     if (nitro > 0) {
-      ctx.fillStyle = '#22d3ee';
+      ctx.fillStyle = pal.t1;
       ctx.fillRect(x - 2, PY + CAR_H / 2, 4, rand(2, 6));
     }
     ctx.restore();
@@ -237,7 +239,7 @@
     ctx.fillText('F', 80, 8);
     ctx.strokeStyle = pal.t1;
     ctx.strokeRect(85.5, 3.5, 38, 5);
-    ctx.fillStyle = fuel < 25 ? '#ef4444' : '#facc15';
+    ctx.fillStyle = fuel < 25 ? pal.hl1 : pal.t2;
     ctx.fillRect(86, 4, (37 * fuel) / 100, 4);
   }
 

@@ -1,5 +1,5 @@
 import type { WidgetDef } from '../../core/types';
-import { mediaPaneTitle } from '../youtube/media';
+import { mediaPaneTitle } from '../media/media';
 import { SPOTIFY_DEFAULT } from './presets';
 import Spotify from './Spotify.svelte';
 

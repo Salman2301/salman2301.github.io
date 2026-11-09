@@ -7,6 +7,7 @@
   import { templatePickerOpen } from '../core/ui';
   import { focusPane, leaves, workspace } from '../core/workspace';
   import ClockPanel from './ClockPanel.svelte';
+  import MusicControl from './MusicControl.svelte';
 
   let now = new Date();
   const t = setInterval(() => (now = new Date()), 1000);
@@ -39,6 +40,7 @@
       <span class="seg item tone-{item.tone ?? 'normal'}" title={item.title}>{item.text}</span>
     {/if}
   {/each}
+  <MusicControl />
   <label class="seg theme" title="Theme (or type: theme <name>)">
     <span class="theme-label">theme</span>
     <select aria-label="Theme" value={$themeStore} on:change={(e) => setTheme(e.currentTarget.value)}>

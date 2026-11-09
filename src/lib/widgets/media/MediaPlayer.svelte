@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import type { Config } from '../../core/types';
-  import { asItem, fetchTitle, itemKey, labelOf, playKey, resolveInput, type MediaItem, type MediaSource, type Preset } from './media';
+  import { asItem, fetchTitle, itemKey, labelOf, resolveInput, type MediaItem, type MediaSource, type Preset } from './media';
   import PresetMenu from './PresetMenu.svelte';
   import { recentFor, recordPlay } from './recent';
 
   /**
-   * Generic iframe player behind the youtube, ytmusic and spotify widgets:
+   * Generic iframe player behind the Spotify widget:
    * a thin bar (presets/recent menu, URL input, reload, open) above an
    * embedded player that gets the rest of the pane. The bar drops to icons
    * in small panes and floats over the player in short ones; the menu
@@ -70,7 +70,7 @@
   let srcKey = '';
   $: syncSrc(item);
   function syncSrc(next: MediaItem | null) {
-    const key = next ? playKey(next) : '';
+    const key = next ? itemKey(next) : '';
     if (key === srcKey) return;
     srcKey = key;
     src = next ? source.embedUrl(next) : '';

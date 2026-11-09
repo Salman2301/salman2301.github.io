@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import type { GameApi } from '../../core/types';
-  import { fitCanvas, heldKeys, readPalette, startLoop, watchPalette, type Palette } from '../kit';
+  import { fitCanvas, heldKeys, mix, readPalette, startLoop, watchPalette, type Palette } from '../kit';
 
   export let paused = true;
   export let api: GameApi;
@@ -22,7 +22,17 @@
     J: ['#..', '###', '...'],
     L: ['..#', '###', '...'],
   };
-  const COLORS: Record<Kind, string> = { I: '#22d3ee', O: '#facc15', T: '#c084fc', S: '#4ade80', Z: '#f87171', J: '#60a5fa', L: '#fb923c' };
+  // The seven pieces are shades of the theme's accent and text colours.
+  const pieceColors = (p: Palette): Record<Kind, string> => ({
+    I: p.hl1,
+    O: p.t2,
+    T: mix(p.hl1, p.t2, 0.5),
+    S: p.t1,
+    Z: mix(p.hl1, p.t1, 0.5),
+    J: mix(p.t2, p.t1, 0.5),
+    L: mix(p.hl1, p.bg2, 0.4),
+  });
+  let colors = {} as Record<Kind, string>;
 
   // rotations[kind][r] = list of [x, y] cells
   const ROT: Record<Kind, [number, number][][]> = {} as never;
@@ -259,6 +269,7 @@
   let h = 0;
   let ctx: CanvasRenderingContext2D | null = null;
   let pal: Palette;
+  $: if (pal) colors = pieceColors(pal);
   $: if (canvas && w && h) ctx = fitCanvas(canvas, w, h, VW, VH);
   $: if (paused) keys.clear();
 
@@ -268,7 +279,7 @@
     ctx.fillStyle = color;
     ctx.fillRect(x + 0.5, y + 0.5, C - 1, C - 1);
     ctx.globalAlpha = alpha * 0.35;
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = pal.t2;
     ctx.fillRect(x + 0.5, y + 0.5, C - 1, 1.5);
     ctx.globalAlpha = 1;
   }
@@ -278,7 +289,7 @@
     const s = 6;
     for (const [cx, cy] of ROT[k][0]) {
       ctx!.globalAlpha = dim ? 0.35 : 1;
-      ctx!.fillStyle = COLORS[k];
+      ctx!.fillStyle = colors[k];
       ctx!.fillRect(x + cx * s, y + cy * s, s - 0.8, s - 0.8);
     }
     ctx!.globalAlpha = 1;
@@ -299,7 +310,7 @@
     ctx.strokeRect(ox, oy, W * C, H * C);
     board.forEach((row, y) =>
       row.forEach((k, x) => {
-        if (k) block(ox + x * C, oy + y * C, COLORS[k], clearing.includes(y) ? 0.3 + Math.random() * 0.7 : 1);
+        if (k) block(ox + x * C, oy + y * C, colors[k], clearing.includes(y) ? 0.3 + Math.random() * 0.7 : 1);
       }),
     );
     if (!over && !clearing.length) {
@@ -307,12 +318,12 @@
       const g = { ...piece };
       while (fits({ ...g, y: g.y + 1 })) g.y++;
       for (const [x, y] of cells(g)) if (y >= 0) {
-        ctx.strokeStyle = COLORS[piece.k];
+        ctx.strokeStyle = colors[piece.k];
         ctx.globalAlpha = 0.5;
         ctx.strokeRect(ox + x * C + 1, oy + y * C + 1, C - 2, C - 2);
         ctx.globalAlpha = 1;
       }
-      for (const [x, y] of cells()) if (y >= 0) block(ox + x * C, oy + y * C, COLORS[piece.k]);
+      for (const [x, y] of cells()) if (y >= 0) block(ox + x * C, oy + y * C, colors[piece.k]);
     }
     // side panel
     const px = ox + W * C + 8;

@@ -1,4 +1,4 @@
-import type { MediaItem, Preset } from '../youtube/media';
+import type { MediaItem, Preset } from '../media/media';
 
 /**
  * Spotify editorial playlists for focus and coding. Every id was checked

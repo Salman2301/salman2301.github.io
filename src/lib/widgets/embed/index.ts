@@ -8,7 +8,7 @@ const widget: WidgetDef = {
   icon: '⧉',
   component: Embed,
   defaultConfig: { url: '' },
-  keywords: ['web', 'browser', 'iframe', 'youtube', 'video', 'page', 'url'],
+  keywords: ['web', 'browser', 'iframe', 'page', 'url'],
   paneTitle: (config) => {
     const url = typeof config.url === 'string' ? config.url : '';
     try {

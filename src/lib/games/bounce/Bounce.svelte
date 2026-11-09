@@ -264,7 +264,7 @@
           }
           ctx.fill();
         } else if (c === 'o') {
-          ctx.strokeStyle = '#facc15';
+          ctx.strokeStyle = pal.t2;
           ctx.lineWidth = 1.2;
           ctx.beginPath();
           ctx.ellipse(px + T / 2, py + T / 2, 2.2, 4.6, 0, 0, Math.PI * 2);
@@ -288,11 +288,11 @@
     // ball
     if (deadT <= 0 || Math.floor(deadT * 12) % 2 === 0) {
       const bx = ball.x - cx;
-      ctx.fillStyle = '#ef4444';
+      ctx.fillStyle = pal.hl1;
       ctx.beginPath();
       ctx.arc(bx, ball.y, ball.r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = pal.t2;
       ctx.globalAlpha = 0.6;
       ctx.beginPath();
       ctx.arc(bx - 1, ball.y - 1.2, 1, 0, Math.PI * 2);
@@ -301,7 +301,7 @@
     }
     // HUD
     ctx.font = '6px "JetBrains Mono", monospace';
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = pal.hl1;
     for (let i = 0; i < lives; i++) {
       ctx.beginPath();
       ctx.arc(5 + i * 7, 5, 2.4, 0, Math.PI * 2);

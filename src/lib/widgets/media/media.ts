@@ -1,18 +1,14 @@
 /**
- * Shared model for the media widgets (youtube, ytmusic, spotify): what an
- * item is, how a provider turns text into one, and the small helpers the
- * player component and the terminal commands both use.
+ * Shared model for the iframe music widgets (Spotify): what an item is, how
+ * a provider turns text into one, and the small helpers the player component
+ * and the terminal commands both use.
  */
 
 /** One playable thing. Stored in pane config, so keep it small and plain. */
 export interface MediaItem {
-  /** Provider kind: 'video' | 'playlist' for YouTube; playlist, album, track, ... for Spotify. */
+  /** Provider kind: playlist, album, track, episode, show or artist. */
   kind: string;
   id: string;
-  /** YouTube: the playlist a video plays inside. */
-  list?: string;
-  /** Start offset in seconds. */
-  start?: number;
   /** Display title: a preset name or the oEmbed title. */
   title?: string;
 }
@@ -29,7 +25,7 @@ export interface Preset {
 export interface MediaSource {
   /** Widget id; also namespaces the recent list. */
   widget: string;
-  /** Brand name for titles and messages, e.g. "YouTube". */
+  /** Brand name for titles and messages, e.g. "Spotify". */
   name: string;
   parse(input: string): MediaItem | null;
   /** Validate the shape of an id for this provider (config can come from share links). */
@@ -45,14 +41,9 @@ export interface MediaSource {
   shortPlaceholder: string;
 }
 
-/** Identity of an item, ignoring title and start time. */
+/** Identity of an item, ignoring its title. */
 export function itemKey(item: MediaItem): string {
-  return `${item.kind}:${item.id}${item.list ? `:${item.list}` : ''}`;
-}
-
-/** Identity plus start time: when this changes the iframe must reload. */
-export function playKey(item: MediaItem): string {
-  return `${itemKey(item)}@${item.start ?? 0}`;
+  return `${item.kind}:${item.id}`;
 }
 
 /** Read an item out of untrusted config. */
@@ -61,20 +52,18 @@ export function asItem(value: unknown, source: MediaSource): MediaItem | null {
   const v = value as Record<string, unknown>;
   if (typeof v.kind !== 'string' || typeof v.id !== 'string') return null;
   const item: MediaItem = { kind: v.kind, id: v.id };
-  if (typeof v.list === 'string' && v.list) item.list = v.list;
-  if (typeof v.start === 'number' && v.start > 0) item.start = Math.floor(v.start);
   if (typeof v.title === 'string' && v.title) item.title = v.title;
   return source.isValid(item) ? item : null;
 }
 
-/** "video jfKfPfyJRdk" when there is no title yet. */
+/** "track 4cOdK2wGLETKBW3PvgPWqT" when there is no title yet. */
 export function labelOf(item: MediaItem): string {
   return item.title || `${item.kind} ${item.id}`;
 }
 
 /**
- * oEmbed titles often carry emoji ("lofi hip hop radio 📚 beats to ...").
- * The UI never shows emoji, so strip pictographs and tidy the spacing.
+ * oEmbed titles often carry emoji. The UI never shows emoji, so strip
+ * pictographs and tidy the spacing.
  */
 export function cleanTitle(raw: string): string {
   return raw
@@ -88,9 +77,9 @@ export function cleanTitle(raw: string): string {
 const titleCache = new Map<string, string>();
 
 /**
- * Title of an item via the provider's oEmbed endpoint (both YouTube and
- * Spotify allow cross-origin requests). Live streams come back without a
- * `title` field, so fall back to the title attribute of the embed html.
+ * Title of an item via the provider's oEmbed endpoint (Spotify allows
+ * cross-origin requests). Some items come back without a `title` field, so
+ * fall back to the title attribute of the embed html.
  */
 export async function fetchTitle(source: MediaSource, item: MediaItem, signal?: AbortSignal): Promise<string> {
   const url = source.oembedUrl(item);
@@ -128,16 +117,7 @@ export function findPreset(presets: Preset[], item: MediaItem): Preset | undefin
   return presets.find((p) => itemKey(p.item) === key);
 }
 
-/**
- * Autoplay only once the visitor has interacted with the page, so a reload
- * never starts music on its own, but picking something plays it at once.
- */
-export function canAutoplay(): boolean {
-  const nav = navigator as Navigator & { userActivation?: { hasBeenActive: boolean } };
-  return !!nav.userActivation?.hasBeenActive;
-}
-
-/** Accept "youtube.com/..." without a scheme. Returns null when it is not a URL. */
+/** Accept "open.spotify.com/..." without a scheme. Returns null when it is not a URL. */
 export function toUrl(text: string): URL | null {
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`;
   try {
@@ -148,7 +128,7 @@ export function toUrl(text: string): URL | null {
   }
 }
 
-/** Pane title "YouTube · lofi hip hop radio"; the fallback item's title when the pane has none of its own. */
+/** Pane title "Spotify · lofi beats"; the fallback item's title when the pane has none of its own. */
 export function mediaPaneTitle(name: string, value: unknown, fallback: MediaItem): string {
   const item = value === undefined ? fallback : value;
   const title = item && typeof item === 'object' ? (item as Partial<MediaItem>).title : undefined;

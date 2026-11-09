@@ -4,7 +4,7 @@ import { findPreset, itemKey, type MediaItem, type Preset } from './media';
 
 /**
  * "Recently played", one persisted list per media widget, newest first.
- * Global rather than per pane: every YouTube pane shares one history.
+ * Global rather than per pane: every pane of one media widget shares one history.
  */
 export const RECENT_LIMIT = 8;
 

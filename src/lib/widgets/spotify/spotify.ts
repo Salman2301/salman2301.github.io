@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { themes, themeStore } from '../../core/theme';
-import { toUrl, type MediaItem, type MediaSource } from '../youtube/media';
+import { toUrl, type MediaItem, type MediaSource } from '../media/media';
 
 /** Spotify link parsing and embedding (open.spotify.com/embed/...). */
 

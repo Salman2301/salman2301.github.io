@@ -432,8 +432,8 @@
     --related: color-mix(in srgb, var(--bg2) 34%, var(--bg1));
     --same: color-mix(in srgb, var(--hl1) 20%, var(--bg1));
     --picked: color-mix(in srgb, var(--hl1) 32%, var(--bg1));
-    --bad: color-mix(in srgb, #e5484d 82%, var(--t2));
-    --bad-bg: color-mix(in srgb, #e5484d 30%, transparent);
+    --bad: var(--t2);
+    --bad-bg: color-mix(in srgb, var(--t1) 35%, transparent);
     position: relative;
     width: 100%;
     height: 100%;
@@ -590,8 +590,8 @@
     background: var(--hl1);
   }
   /*
-   * Wrong and repeated digits are hatched in red, so they read as a problem in
-   * every theme, including those whose accent (used for entered digits) is red.
+   * Wrong and repeated digits are hatched and bold in the text colour, so they
+   * read as a problem without a colour outside the theme.
    */
   .cell.clash,
   .cell.wrong {
