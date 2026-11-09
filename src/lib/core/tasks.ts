@@ -31,11 +31,17 @@ export interface Task {
   doneAt?: number;
 }
 
+/**
+ * A space (called a project in the code and storage): a named group of tasks
+ * and notes, with an optional theme of its own.
+ */
 export interface Project {
   id: string;
   name: string;
   notes: string;
   createdAt: number;
+  /** Theme shown while this space is active; unset uses the normal theme. */
+  theme?: string;
 }
 
 export const INBOX_ID = 'inbox';
@@ -152,6 +158,52 @@ export function addTask(text: string, opts: { projectId?: string; parentId?: str
   return task;
 }
 
+export interface PastedLine {
+  text: string;
+  /** Indented under the line before: becomes its sub-task. */
+  nested: boolean;
+  done: boolean;
+}
+
+/**
+ * Lines of pasted text as tasks: list markers ("- ", "* ", "• ", "1. ",
+ * "1) ") and checkboxes ("[ ]", "[x]") are dropped, blank lines skipped,
+ * and indented lines nest under the line above.
+ */
+export function parseTaskLines(text: string): PastedLine[] {
+  const out: PastedLine[] = [];
+  for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
+    if (!raw.trim()) continue;
+    const indent = /^[ \t]*/.exec(raw)![0].replace(/\t/g, '  ').length;
+    let line = raw.trim().replace(/^([-*+•]|\d+[.)])(\s+|$)/, '');
+    const box = /^\[([ xX])\]\s*/.exec(line);
+    if (box) line = line.slice(box[0].length);
+    if (!line.trim()) continue;
+    out.push({ text: line, nested: indent >= 2 && out.length > 0, done: !!box && box[1] !== ' ' });
+  }
+  return out;
+}
+
+/**
+ * Add one task per pasted line, in a space or under a parent task (then
+ * every line is a sub-task). Returns the tasks added.
+ */
+export function addTaskLines(text: string, opts: { projectId?: string; parentId?: string } = {}): Task[] {
+  const added: string[] = [];
+  let lastTop: Task | null = null;
+  for (const line of parseTaskLines(text)) {
+    const parentId = opts.parentId ?? (line.nested && lastTop ? lastTop.id : undefined);
+    const t = addTask(line.text, parentId ? { parentId } : { projectId: opts.projectId });
+    if (!t) continue;
+    if (line.done) toggleTask(t.id);
+    if (!parentId) lastTop = t;
+    added.push(t.id);
+  }
+  // as they are now (ticking [x] items replaced the objects)
+  const now = get(tasks);
+  return added.map((id) => now.find((t) => t.id === id)!).filter(Boolean);
+}
+
 export function toggleTask(id: string) {
   tasks.update((list) =>
     list.map((t) => (t.id === id ? { ...t, done: !t.done, doneAt: !t.done ? Date.now() : undefined } : t)),
@@ -224,6 +276,11 @@ export function renameProject(id: string, name: string) {
   const clean = name.trim().slice(0, 40);
   if (!clean) return;
   projects.update((list) => list.map((p) => (p.id === id ? { ...p, name: clean } : p)));
+}
+
+/** Give a space its own theme, or null to use the normal theme. */
+export function setProjectTheme(id: string, theme: string | null) {
+  projects.update((list) => list.map((p) => (p.id === id ? { ...p, theme: theme || undefined } : p)));
 }
 
 export function setProjectNotes(id: string, notes: string) {

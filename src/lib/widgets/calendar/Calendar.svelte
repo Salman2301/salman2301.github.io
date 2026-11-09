@@ -6,6 +6,7 @@
   import { openMention } from '../../core/mentions';
   import { inList, reminders, type Reminder } from '../../core/reminders';
   import { projects } from '../../core/tasks';
+  import { activeSpace, ALL, currentSpace } from '../../core/spaces';
   import type { Config } from '../../core/types';
   import { LEVELS, periodKey, step, title, type Level } from './cal';
   import DayView from './DayView.svelte';
@@ -31,7 +32,9 @@
   $: list = typeof config.list === 'string' ? config.list : 'all';
   $: if (list !== 'all' && !$projects.some((p) => p.id === list)) updateConfig({ list: 'all' });
 
-  $: byDay = inList($reminders, list).reduce<Record<string, Reminder[]>>((m, r) => ((m[r.day] ??= []).push(r), m), {});
+  // The space chosen in the status bar wins over this pane's own pick.
+  $: shownList = $activeSpace !== ALL ? $activeSpace : list;
+  $: byDay = inList($reminders, shownList).reduce<Record<string, Reminder[]>>((m, r) => ((m[r.day] ??= []).push(r), m), {});
   $: viewKey = `${level}:${periodKey(level, cur)}`;
   $: levelIndex = LEVELS.indexOf(level);
 
@@ -342,10 +345,14 @@
         <button role="tab" aria-selected={l === level} class:on={l === level} on:click={() => zoomTo(l, cur)} title="{l} ({l[0]})">{l}</button>
       {/each}
     </div>
-    <select value={list} on:change={(e) => updateConfig({ list: e.currentTarget.value })} aria-label="Which list to show">
-      <option value="all">all lists</option>
-      {#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-    </select>
+    {#if $currentSpace}
+      <span class="space-tag" title="Change the space in the status bar">{$currentSpace.name}</span>
+    {:else}
+      <select value={list} on:change={(e) => updateConfig({ list: e.currentTarget.value })} aria-label="Which space to show">
+        <option value="all">all spaces</option>
+        {#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+      </select>
+    {/if}
   </header>
 
   <div
@@ -366,7 +373,7 @@
           {:else if level === 'week'}
             <WeekView {cur} {today} {byDay} zoom={zoomTo} {openItem} />
           {:else}
-            <DayView {cur} {today} {byDay} {openItem} {list} />
+            <DayView {cur} {today} {byDay} {openItem} list={shownList} />
           {/if}
         </div>
       {/key}
@@ -467,6 +474,13 @@
     background: var(--bg1);
     color: var(--t2);
     font: inherit;
+    font-size: 12px;
+  }
+  .space-tag {
+    padding: 2px 8px;
+    border: 1px solid var(--hl1);
+    border-radius: 6px;
+    color: var(--hl1);
     font-size: 12px;
   }
   .stage {

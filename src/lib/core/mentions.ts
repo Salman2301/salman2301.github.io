@@ -125,6 +125,22 @@ export function linksIn(src: string, noteList: Note[] = get(notes), taskList: Ta
   return segments(src, noteList, taskList).filter((s): s is Link => s.kind !== undefined);
 }
 
+/** Where each link sits in the text (offsets into `src`), resolved, for editors that draw chips. */
+export interface MentionRange extends Resolved {
+  from: number;
+  to: number;
+  ref: string;
+  /** Dates with a time: [@time: ...]. */
+  time: boolean;
+}
+
+export function mentionRanges(src: string, noteList: Note[] = get(notes), taskList: Task[] = get(tasks)): MentionRange[] {
+  return scan(src).map((m) => {
+    const r = resolve(m, noteList, taskList);
+    return { ...r, from: m.index, to: m.index + m.length, ref: m.ref, time: r.kind === 'date' && r.id.length > 10 };
+  });
+}
+
 /** Every valid date in a piece of text ("2026-11-28" or "2026-11-28 15:20"). */
 export function datesIn(src: string): string[] {
   return scan(src)

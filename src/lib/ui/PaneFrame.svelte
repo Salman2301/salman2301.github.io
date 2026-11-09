@@ -4,6 +4,7 @@
   import { getWidget, widgets } from '../core/registry';
   import type { Config } from '../core/types';
   import {
+    canClosePane,
     closePane,
     focusPane,
     leaf,
@@ -120,7 +121,13 @@
           <svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1.5" /></svg>
         {/if}
       </button>
-      <button class="close" title="Close (Alt+W)" aria-label="Close pane" on:click={() => closePane(pane.id)}>
+      <button
+        class="close"
+        title={canClosePane($workspace) ? 'Close (Alt+W)' : 'The only pane of the only tab stays open'}
+        aria-label="Close pane"
+        disabled={!canClosePane($workspace)}
+        on:click={() => closePane(pane.id)}
+      >
         <svg viewBox="0 0 16 16"><line x1="3.5" y1="3.5" x2="12.5" y2="12.5" /><line x1="12.5" y1="3.5" x2="3.5" y2="12.5" /></svg>
       </button>
     </div>

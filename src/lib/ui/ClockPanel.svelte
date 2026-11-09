@@ -7,6 +7,7 @@
   import { calendarList, inList, reminders, type Reminder } from '../core/reminders';
   import { projects } from '../core/tasks';
   import { calendarRequest } from '../core/ui';
+  import { activeSpace, ALL, currentSpace } from '../core/spaces';
 
   /** Opened from the clock in the status bar. Closes on Escape or an outside click. */
   export let open = false;
@@ -55,7 +56,8 @@
   const keyOf = (d: number) => `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
   // Reminders in the chosen list, grouped by day.
-  $: shown = inList($reminders, $calendarList);
+  // The space chosen in the status bar wins over the calendar's own pick.
+  $: shown = inList($reminders, $activeSpace !== ALL ? $activeSpace : $calendarList);
   $: byDay = shown.reduce<Record<string, Reminder[]>>((m, r) => ((m[r.day] ??= []).push(r), m), {});
   $: agenda = byDay[selected] ?? [];
   // A list that was deleted falls back to all lists.
@@ -145,10 +147,14 @@
       <div class="agenda">
         <div class="agenda-head">
           <span class="agenda-day">{new Date(`${selected}T00:00`).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</span>
-          <select bind:value={$calendarList} aria-label="Which list to show">
-            <option value="all">all lists</option>
-            {#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
-          </select>
+          {#if $currentSpace}
+            <span class="space-tag" title="Change the space in the status bar">{$currentSpace.name}</span>
+          {:else}
+            <select bind:value={$calendarList} aria-label="Which space to show">
+              <option value="all">all spaces</option>
+              {#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+            </select>
+          {/if}
         </div>
         {#if agenda.length}
           <ul>
@@ -316,6 +322,10 @@
     background: var(--bg1);
     color: var(--t2);
     font: inherit;
+    font-size: 11px;
+  }
+  .space-tag {
+    color: var(--hl1);
     font-size: 11px;
   }
   .agenda ul {

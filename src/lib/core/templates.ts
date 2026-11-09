@@ -63,7 +63,7 @@ export const builtinTemplates: TemplateDef[] = [
     id: 'dev',
     title: 'Dev Desk',
     description: 'A big terminal with notes and a stopwatch on the side.',
-    build: () => row([leaf('terminal', { startup: ['neofetch'] }), col([leaf('notes'), leaf('timer')], [0.62, 0.38])], [0.62, 0.38]),
+    build: () => row([leaf('terminal', { startup: ['whoami'] }), col([leaf('notes'), leaf('timer')], [0.62, 0.38])], [0.62, 0.38]),
   },
   {
     id: 'arcade',
@@ -98,7 +98,7 @@ export const builtinTemplates: TemplateDef[] = [
     title: 'Hacker',
     description: 'Two terminals and digital rain. Looks busy.',
     build: () =>
-      row([leaf('terminal', { startup: ['neofetch'] }), col([leaf('matrix'), leaf('terminal', { startup: ['hack'] })])], [0.55, 0.45]),
+      row([leaf('terminal', { startup: ['whoami'] }), col([leaf('matrix'), leaf('terminal', { startup: ['help'] })])], [0.55, 0.45]),
   },
 ];
 

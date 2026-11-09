@@ -2,24 +2,16 @@
   import { onDestroy, onMount } from 'svelte';
   import { secondTick } from './ticker';
 
+  /**
+   * A quiet 12-hour dial: twelve hour marks, thin hands and a fine second
+   * hand in the accent colour. No numerals, no minute ticks.
+   */
+
   /** Diameter in px. */
   export let size = 200;
-  /**
-   * 24-hour face: the hour hand goes round once a day, with 24 / 6 / 12 / 18
-   * at the quarters and a dot for every hour. The 12-hour face shows AM / PM.
-   */
-  export let hour24 = false;
 
   const C = 100;
-  const TICKS = Array.from({ length: 60 }, (_, i) => i);
-  const HOURS24 = Array.from({ length: 24 }, (_, i) => i);
-  const quarters = (labels: number[]) => [
-    { n: labels[0], x: C, y: 36 },
-    { n: labels[1], x: 164, y: C },
-    { n: labels[2], x: C, y: 164 },
-    { n: labels[3], x: 36, y: C },
-  ];
-  $: NUMERALS = hour24 ? quarters([24, 6, 12, 18]) : quarters([12, 3, 6, 9]);
+  const HOURS = Array.from({ length: 12 }, (_, i) => i);
 
   let t = Date.now();
   let raf = 0;
@@ -52,40 +44,21 @@
   $: d = new Date(t);
   $: seconds = d.getSeconds() + (smooth ? d.getMilliseconds() / 1000 : 0);
   $: minutes = d.getMinutes() + seconds / 60;
-  $: hours = hour24 ? d.getHours() + minutes / 60 : (d.getHours() % 12) + minutes / 60;
-  // one turn is 12 hours, or 24 on the 24-hour face
-  $: hourDeg = hours * (hour24 ? 15 : 30);
-  $: period = d.getHours() < 12 ? 'AM' : 'PM';
-  $: numerals = size >= 150;
+  $: hours = (d.getHours() % 12) + minutes / 60;
   // the label only changes once a minute, so do not format it every frame
   $: minute = Math.floor(t / 60_000);
-  $: label = new Date(minute * 60_000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: !hour24 });
+  $: label = new Date(minute * 60_000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 </script>
 
 <svg class="dial-face" viewBox="0 0 200 200" width={size} height={size} role="img" aria-label="Analog clock {label}">
   <circle class="plate" cx={C} cy={C} r="96" />
-  {#each TICKS as i}
-    <line class="mark" class:mark-hour={i % 5 === 0} x1={C} y1="9" x2={C} y2={i % 5 === 0 ? 21 : 14} transform="rotate({i * 6} {C} {C})" />
+  {#each HOURS as i}
+    <line class="mark" class:mark-q={i % 3 === 0} x1={C} y1="12" x2={C} y2={i % 3 === 0 ? 24 : 19} transform="rotate({i * 30} {C} {C})" />
   {/each}
-  {#if hour24}
-    {#each HOURS24 as i}
-      <circle class="hour-dot" class:hour-dot-q={i % 6 === 0} cx={C} cy="50" r={i % 6 === 0 ? 2.2 : 1.4} transform="rotate({i * 15} {C} {C})" />
-    {/each}
-  {/if}
-  {#if numerals}
-    {#each NUMERALS as m}
-      <text class="numeral" x={m.x} y={m.y} text-anchor="middle" dominant-baseline="central">{m.n}</text>
-    {/each}
-    <text class="period" x={C} y="134" text-anchor="middle" dominant-baseline="central">{hour24 ? '24h' : period}</text>
-  {/if}
-  <line class="hand-hour" x1={C} y1="112" x2={C} y2="54" transform="rotate({hourDeg} {C} {C})" />
-  <line class="hand-minute" x1={C} y1="116" x2={C} y2="28" transform="rotate({minutes * 6} {C} {C})" />
-  <g transform="rotate({seconds * 6} {C} {C})">
-    <line class="hand-second" x1={C} y1="126" x2={C} y2="18" />
-    <circle class="hand-second-tail" cx={C} cy="120" r="3.2" />
-  </g>
-  <circle class="hub" cx={C} cy={C} r="5" />
-  <circle class="hub-dot" cx={C} cy={C} r="1.8" />
+  <line class="hand-hour" x1={C} y1="108" x2={C} y2="56" transform="rotate({hours * 30} {C} {C})" />
+  <line class="hand-minute" x1={C} y1="110" x2={C} y2="30" transform="rotate({minutes * 6} {C} {C})" />
+  <line class="hand-second" x1={C} y1="116" x2={C} y2="22" transform="rotate({seconds * 6} {C} {C})" />
+  <circle class="hub" cx={C} cy={C} r="2.6" />
 </svg>
 
 <style>
@@ -95,36 +68,18 @@
     overflow: visible;
   }
   .plate {
-    fill: color-mix(in srgb, var(--bg2) 22%, var(--bg1));
-    stroke: color-mix(in srgb, var(--bg2) 90%, var(--t1));
-    stroke-width: 1.5;
+    fill: none;
+    stroke: color-mix(in srgb, var(--bg2) 85%, transparent);
+    stroke-width: 1;
   }
   .mark {
     stroke: color-mix(in srgb, var(--t1) 55%, transparent);
-    stroke-width: 1;
+    stroke-width: 1.4;
     stroke-linecap: round;
   }
-  .mark-hour {
-    stroke: var(--t2);
-    stroke-width: 2.6;
-  }
-  .numeral {
-    fill: var(--t1);
-    font-size: 15px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .period {
-    fill: var(--t1);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.1em;
-  }
-  .hour-dot {
-    fill: color-mix(in srgb, var(--t1) 70%, transparent);
-  }
-  .hour-dot-q {
-    fill: var(--hl1);
+  .mark-q {
+    stroke: var(--t1);
+    stroke-width: 1.8;
   }
   .hand-hour,
   .hand-minute {
@@ -132,21 +87,17 @@
     stroke-linecap: round;
   }
   .hand-hour {
-    stroke-width: 6.5;
+    stroke-width: 3.2;
   }
   .hand-minute {
-    stroke-width: 4;
+    stroke-width: 2;
   }
   .hand-second {
     stroke: var(--hl1);
-    stroke-width: 1.6;
+    stroke-width: 0.9;
     stroke-linecap: round;
   }
-  .hand-second-tail,
   .hub {
     fill: var(--hl1);
-  }
-  .hub-dot {
-    fill: var(--bg1);
   }
 </style>

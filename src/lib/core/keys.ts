@@ -30,7 +30,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: [['Alt', '←↑↓→']], does: 'focus the pane in that direction' },
       { keys: [['Alt', 'Enter'], ['Alt', '\\']], does: 'split right with a terminal' },
       { keys: [['Alt', '-']], does: 'split down with a terminal' },
-      { keys: [['Alt', 'W']], does: 'close the focused pane' },
+      { keys: [['Alt', 'W']], does: 'close the focused pane (its last pane closes the tab, never the last tab)' },
       { keys: [['Alt', 'M'], ['Alt', 'F']], does: 'maximize or restore the focused pane' },
       { keys: [['Alt', 'N']], does: 'new tab' },
       { keys: [['Alt', '['], ['Alt', ']']], does: 'previous / next tab' },
@@ -38,6 +38,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: [['Alt', 'Y']], does: 'next theme (stays dark or light)' },
       { keys: [['Alt', 'Shift', 'Y']], does: 'random theme (stays dark or light)' },
       { keys: [['Alt', 'P']], does: 'play / pause the radio' },
+      { keys: [['Alt', 'S']], does: 'screensaver (any key returns)' },
     ],
   },
   {
@@ -79,14 +80,16 @@ export const SHORTCUTS: ShortcutGroup[] = [
   },
   {
     title: 'Notes',
-    where: 'in the editor and preview',
+    where: 'live preview: the line you are on shows its markdown',
     items: [
-      { keys: [['hover'], ['right-click']], does: 'a [@task:] or [@date:] chip in the preview: details and actions' },
-      { keys: [['Shift', 'F10']], does: 'the same card for a focused chip' },
+      { keys: [['click']], does: 'a line to edit its markdown; a link or chip to open it' },
+      { keys: [['hover'], ['right-click']], does: 'a [@task:] or [@date:] chip: details and actions' },
+      { keys: [['Shift', 'F10']], does: 'the same card for a focused chip (reading view)' },
       { keys: [['Mod', 'B'], ['Mod', 'I']], does: 'bold / italic' },
+      { keys: [['Mod', 'Z'], ['Mod', 'Shift', 'Z']], does: 'undo / redo' },
       { keys: [['Mod', 'S']], does: 'save now' },
       { keys: [['Tab']], does: 'indent' },
-      { keys: [['Enter']], does: 'continue a list' },
+      { keys: [['Enter']], does: 'continue a list or quote' },
     ],
   },
   {
@@ -98,6 +101,14 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: [['Y'], ['M'], ['W'], ['D']], does: 'year, month, week or day view' },
       { keys: [['←'], ['→'], ['swipe']], does: 'previous / next page' },
       { keys: [['T']], does: 'today' },
+    ],
+  },
+  {
+    title: 'Clock',
+    where: 'with the clock focused',
+    items: [
+      { keys: [['A']], does: 'digital / analog' },
+      { keys: [['H']], does: '12h / 24h (digital)' },
     ],
   },
   {

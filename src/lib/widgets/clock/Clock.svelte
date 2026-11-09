@@ -31,6 +31,8 @@
   let fh = 0;
   let draft = '';
   let error = '';
+  /** Showing the world clock header and the add box ("cities" in the footer). */
+  let editingZones = false;
 
   // Breakpoints: tiny shows only the time, medium adds the date and the face
   // switches (plus a one-line strip of world times when there is height for
@@ -45,21 +47,23 @@
 
   $: dateSize = clamp(fw * 0.034, 11, 18);
   $: dateSpace = tiny ? 0 : dateSize * 1.4 + 10 + (strip ? 28 : 0);
-  // "88:88" in tabular digits is about 3em wide, plus the small seconds column
-  $: fontSize = clamp(Math.min((fw - 8) / 3.55, (fh - dateSpace) / 1.08), 16, 280);
+  // "88:88" in tabular digits is about 3em wide, plus the small AM / PM
+  $: fontSize = clamp(Math.min((fw - 8) / (hour12 ? 3.4 : 3.1), (fh - dateSpace) / 1.08), 16, 280);
   $: dialSize = clamp(Math.min(fw - 8, fh - dateSpace - 4), 48, 520);
 
   $: now = $secondTick;
   $: hours = now.getHours();
   $: hh = hour12 ? String(hours % 12 || 12) : pad(hours);
   $: mm = pad(now.getMinutes());
-  $: ss = pad(now.getSeconds());
   $: period = hours < 12 ? 'AM' : 'PM';
   $: dateText = now.toLocaleDateString(
     undefined,
     fw < 360 ? { weekday: 'short', day: 'numeric', month: 'short' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' },
   );
-  $: rows = roomy || strip ? zones.map((z) => describeZone(z, now, hour12)) : [];
+  // 12h / 24h is a digital-only choice: the analog dial is always 12 hours.
+  $: rows = roomy || strip ? zones.map((z) => describeZone(z, now, face === 'analog' || hour12)) : [];
+  // Zen by default: the world clocks appear once a city is added, the add box on request.
+  $: showWorld = roomy && (zones.length > 0 || editingZones);
   $: here = localZone();
   $: hereLabel = `${cityName(here)} · ${formatUtcOffset(utcOffset(here, now))}`;
   $: zoneOptions = roomy ? allZones() : [];
@@ -93,7 +97,7 @@
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     if ((e.target as HTMLElement).closest('input, textarea, select')) return;
     if (e.code === 'KeyA') setFace(face === 'analog' ? 'digital' : 'analog');
-    else if (e.code === 'KeyH') setHour12(!hour12);
+    else if (e.code === 'KeyH' && face === 'digital') setHour12(!hour12);
     else return;
     e.preventDefault();
   }
@@ -126,14 +130,11 @@
   <div class="clock-body">
     <div class="face-area" bind:clientWidth={fw} bind:clientHeight={fh}>
       {#if face === 'analog'}
-        <Dial size={dialSize} hour24={!hour12} />
+        <Dial size={dialSize} />
       {:else}
-        <div class="readout" style="font-size:{fontSize}px" role="timer" aria-label="{hh}:{mm}:{ss}{hour12 ? ` ${period}` : ''}">
+        <div class="readout" style="font-size:{fontSize}px" role="timer" aria-label="{hh}:{mm}{hour12 ? ` ${period}` : ''}">
           <span class="hm">{hh}<span class="colon">:</span>{mm}</span>
-          <span class="side">
-            <span class="sec">{ss}</span>
-            {#if hour12}<span class="period">{period}</span>{/if}
-          </span>
+          {#if hour12}<span class="period">{period}</span>{/if}
         </div>
       {/if}
       {#if !tiny}
@@ -152,12 +153,14 @@
       {/if}
     </div>
 
-    {#if roomy}
-      <section class="world" aria-label="World clocks">
-        <header class="world-head">
-          <span>world clocks</span>
-          <span class="here" title={here}>here: {hereLabel}</span>
-        </header>
+    {#if showWorld}
+      <section class="world" class:editing={editingZones} aria-label="World clocks">
+        {#if editingZones}
+          <header class="world-head">
+            <span>world clocks</span>
+            <span class="here" title={here}>here: {hereLabel}</span>
+          </header>
+        {/if}
         {#if rows.length}
           <ul class="zone-list">
             {#each rows as r (r.zone)}
@@ -172,9 +175,10 @@
               </li>
             {/each}
           </ul>
-        {:else if h >= 440}
+        {:else}
           <p class="zone-empty">Add a city to compare times, e.g. Tokyo or New York.</p>
         {/if}
+        {#if editingZones}
         <form class="add-zone" on:submit|preventDefault={addZone}>
           <input
             list="tz-{paneId}"
@@ -192,6 +196,7 @@
         <datalist id="tz-{paneId}">
           {#each zoneOptions as z}<option value={z} />{/each}
         </datalist>
+        {/if}
       </section>
     {/if}
   </div>
@@ -202,11 +207,15 @@
         <button aria-pressed={face === 'digital'} on:click={() => setFace('digital')}>digital</button>
         <button aria-pressed={face === 'analog'} on:click={() => setFace('analog')}>analog</button>
       </div>
-      <div class="seg" role="group" aria-label="Hour format">
-        <button aria-pressed={!hour12} on:click={() => setHour12(false)}>24h</button>
-        <button aria-pressed={hour12} on:click={() => setHour12(true)}>12h</button>
-      </div>
-      {#if roomy}<span class="hint">a face · h 12/24h</span>{/if}
+      {#if face === 'digital'}
+        <div class="seg" role="group" aria-label="Hour format">
+          <button aria-pressed={!hour12} on:click={() => setHour12(false)}>24h</button>
+          <button aria-pressed={hour12} on:click={() => setHour12(true)}>12h</button>
+        </div>
+      {/if}
+      {#if roomy}
+        <button class="cities" aria-pressed={editingZones} on:click={() => (editingZones = !editingZones)} title="World clocks">cities</button>
+      {/if}
     </footer>
   {/if}
 </div>
@@ -253,32 +262,21 @@
   /* digital readout */
   .readout {
     display: flex;
-    align-items: stretch;
+    align-items: flex-start;
     line-height: 1;
-    font-weight: 700;
+    font-weight: 300;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.02em;
     white-space: nowrap;
   }
   .colon {
-    color: var(--hl1);
+    color: var(--t1);
     margin: 0 -0.04em;
     position: relative;
     top: -0.05em;
   }
-  .side {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    margin-left: 0.08em;
-    padding: 0.13em 0 0.1em;
-  }
-  .sec {
-    font-size: 0.34em;
-    color: var(--hl1);
-    letter-spacing: 0;
-  }
   .period {
+    margin: 0.2em 0 0 0.25em;
     font-size: 0.17em;
     font-weight: 600;
     letter-spacing: 0.12em;
@@ -470,14 +468,40 @@
     cursor: default;
   }
 
-  /* footer */
+  /* footer: hidden until the pane is hovered or focused (always shown on touch) */
   .clock-bar {
     flex: 0 0 auto;
+    opacity: 0;
+    transition: opacity 200ms ease;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
     gap: 8px 10px;
+  }
+  .clock-pane:hover .clock-bar,
+  .clock-pane:focus-within .clock-bar {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .clock-bar {
+      opacity: 0.7;
+    }
+  }
+  .cities {
+    padding: 3px 11px;
+    border: 1px solid var(--bg2);
+    border-radius: 999px;
+    font-size: 11px;
+    color: var(--t1);
+  }
+  .cities:hover,
+  .cities[aria-pressed='true'] {
+    color: var(--hl1);
+    border-color: var(--hl1);
+  }
+  .world:not(.editing) .zone-rm {
+    display: none;
   }
   .seg {
     display: flex;
@@ -497,11 +521,6 @@
   .seg button[aria-pressed='true'] {
     background: var(--hl1);
     color: var(--bg1);
-  }
-  .hint {
-    font-size: 10.5px;
-    color: var(--t1);
-    opacity: 0.8;
   }
 
   /* Phones stack the panes and size each frame by its content, so give the
@@ -533,9 +552,6 @@
     }
     .add-zone button {
       min-height: 36px;
-    }
-    .hint {
-      display: none;
     }
   }
 </style>

@@ -255,18 +255,33 @@ export function splitPane(
 }
 
 /** Close a pane. Closing the last pane leaves a fresh terminal. */
-export function closePane(id: string) {
+/**
+ * Close a pane. The last pane of a tab closes the whole tab, unless it is the
+ * only tab: then nothing happens (there is always one pane to type into).
+ * The pane's x, Alt+W and `exit` all go through here.
+ */
+export function closePane(id: string): 'pane' | 'tab' | 'none' {
+  const s = get(workspace);
+  if (leaves(s.root).length <= 1) {
+    if (s.tabs.length > 1) {
+      closeTab(s.active);
+      return 'tab';
+    }
+    return 'none';
+  }
   commit((s) => {
     const all = leaves(s.root);
-    if (all.length <= 1) {
-      const fresh = leaf('terminal', { startup: ['motd'] });
-      return { ...s, root: fresh, focused: fresh.id, maximized: null };
-    }
     const idx = all.findIndex((l) => l.id === id);
     const neighbour = all[idx + 1] ?? all[idx - 1];
     const root = mapTree(s.root, (n) => (n.type === 'pane' && n.id === id ? null : n)) ?? leaf('terminal');
     return { ...s, root, focused: s.focused === id ? neighbour?.id ?? null : s.focused };
   });
+  return 'pane';
+}
+
+/** Whether closing a pane would do anything: not for the only pane of the only tab. */
+export function canClosePane(s: { root: PaneNode; tabs: unknown[] }): boolean {
+  return leaves(s.root).length > 1 || s.tabs.length > 1;
 }
 
 export function replaceWidget(id: string, widget: string, config: Config = {}) {

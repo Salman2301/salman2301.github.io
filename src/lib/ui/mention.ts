@@ -2,6 +2,43 @@ import { applyMention, candidates, findMention, type Candidate } from '../core/m
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
+const MIRROR_PROPS = [
+  'boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+  'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth', 'borderStyle',
+  'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'wordSpacing',
+  'lineHeight', 'textTransform', 'textIndent', 'tabSize',
+] as const;
+
+/**
+ * Where the caret is on screen, measured with a hidden copy of the field's
+ * text up to the caret (the usual mirror-element trick).
+ */
+function caretPoint(el: Field): { left: number; top: number; bottom: number } {
+  const box = el.getBoundingClientRect();
+  const cs = getComputedStyle(el);
+  const mirror = document.createElement('div');
+  for (const p of MIRROR_PROPS) mirror.style[p] = cs[p];
+  Object.assign(mirror.style, {
+    position: 'fixed',
+    left: '0',
+    top: '0',
+    visibility: 'hidden',
+    overflow: 'hidden',
+    whiteSpace: el instanceof HTMLTextAreaElement ? 'pre-wrap' : 'pre',
+    overflowWrap: 'break-word',
+  });
+  mirror.textContent = el.value.slice(0, el.selectionStart ?? el.value.length);
+  const marker = document.createElement('span');
+  marker.textContent = '\u200b';
+  mirror.append(marker);
+  document.body.append(mirror);
+  const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3;
+  const left = box.left + parseFloat(cs.borderLeftWidth) + marker.offsetLeft - el.scrollLeft;
+  const top = box.top + parseFloat(cs.borderTopWidth) + marker.offsetTop - el.scrollTop;
+  mirror.remove();
+  return { left: Math.min(Math.max(left, box.left), box.right), top, bottom: top + lineHeight };
+}
+
 /**
  * Svelte action: typing @ in the field opens a list of notes (kind "note") or
  * tasks (kind "task"), with matching date words (@today, @tmrw, @monday, @now)
@@ -62,11 +99,13 @@ export function mention(node: Field, options: 'note' | 'task' | MentionOptions) 
     );
   }
 
+  /** Just under the caret, or just above it when there is no room below. */
   function place() {
     if (!pop) return;
-    const r = node.getBoundingClientRect();
-    pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - 300))}px`;
-    pop.style.top = `${Math.min(r.bottom + 4, window.innerHeight - 40)}px`;
+    const c = caretPoint(node);
+    const h = pop.offsetHeight || 200;
+    pop.style.left = `${Math.max(8, Math.min(c.left - 8, window.innerWidth - pop.offsetWidth - 8))}px`;
+    pop.style.top = `${c.bottom + 4 + h > window.innerHeight - 8 ? Math.max(8, c.top - h - 4) : c.bottom + 4}px`;
   }
 
   function refresh() {

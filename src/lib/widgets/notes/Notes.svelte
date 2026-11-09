@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import type { Config } from '../../core/types';
   import { renderMarkdown, toggleTask } from './markdown';
-  import { createNote, deleteNote, notes, sortNotes, timeAgo, titleOf, togglePin, updateNote } from './store';
+  import { createNote, deleteNote, moveNote, notes, noteSpace, reorderNotes, sortNotes, timeAgo, titleOf, togglePin, updateNote } from './store';
+  import { activeSpace, spaceForNew, visibleIn } from '../../core/spaces';
   import DatePicker from '../../ui/DatePicker.svelte';
-  import { mention } from '../../ui/mention';
   import { dateToken, openMention, resolveForHtml, type MentionKind } from '../../core/mentions';
   import { friendlyDate, parseDate, relativeDay } from '../../core/dates';
   import { projectOf, projects, setActiveTask, tasks, toggleTask as toggleTaskDone } from '../../core/tasks';
@@ -14,22 +14,45 @@
   export let config: Config = {};
   export let updateConfig: (patch: Config) => void = () => {};
 
-  type Mode = 'edit' | 'split' | 'preview';
-  const MODES: Mode[] = ['edit', 'split', 'preview'];
+  /**
+   * live: rendered in place, the line being edited shows its markdown
+   * (like Obsidian's Live Preview). source: plain markdown. read: reading view.
+   */
+  type Mode = 'live' | 'source' | 'read';
+  const MODES: { id: Mode; title: string }[] = [
+    { id: 'live', title: 'Live preview: rendered, the line you edit shows its markdown' },
+    { id: 'source', title: 'Source: plain markdown' },
+    { id: 'read', title: 'Reading view' },
+  ];
+  // Older panes saved edit / split / preview.
+  const toMode = (v: unknown): Mode => (v === 'source' || v === 'read' ? v : v === 'preview' ? 'read' : 'live');
+
+  interface EditorApi {
+    focus(): void;
+    setCursor(pos: number): void;
+    insert(text: string, at?: number): void;
+    coordsAt(pos?: number): { left: number; top: number; bottom: number } | null;
+  }
+  // CodeMirror loads with the first notes pane, not with the page.
+  let LiveEditor: typeof import('./editor/LiveEditor.svelte').default | null = null;
+  let editor: EditorApi | null = null;
+  onMount(async () => {
+    LiveEditor = (await import('./editor/LiveEditor.svelte')).default;
+  });
 
   let width = 0;
-  let textarea: HTMLTextAreaElement;
   let fileInput: HTMLInputElement;
   let search = '';
   let sidebarOpen: boolean | null = null; // null = automatic from width
   let confirmDelete = false;
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
-  $: sorted = sortNotes($notes);
-  $: current = $notes.find((n) => n.id === config.noteId) ?? sorted[0];
+  // Only the notes of the active space (all of them under "all spaces").
+  $: sorted = sortNotes($notes).filter((n) => visibleIn($activeSpace, noteSpace(n)));
+  $: current = sorted.find((n) => n.id === config.noteId) ?? sorted[0];
   $: narrow = width > 0 && width < 560;
   $: showSidebar = sidebarOpen ?? (!narrow && width > 0);
-  $: mode = ((config.mode as Mode) || (width >= 820 ? 'split' : 'edit')) as Mode;
+  $: mode = toMode(config.mode);
   $: filtered = search.trim()
     ? sorted.filter((n) => n.body.toLowerCase().includes(search.trim().toLowerCase()))
     : sorted;
@@ -45,7 +68,16 @@
     draft = current.body;
     saved = true;
   }
-  $: html = mode === 'edit' ? '' : renderMarkdown(resolveForHtml(draft, $notes, $tasks));
+  $: html = mode === 'read' ? renderMarkdown(resolveForHtml(draft, $notes, $tasks)) : '';
+
+  // Chips in the editor show live task status and titles: redraw on changes.
+  let chipTick = 0;
+  const offTasks = tasks.subscribe(() => chipTick++);
+  const offNotes = notes.subscribe(() => chipTick++);
+  onDestroy(() => {
+    offTasks();
+    offNotes();
+  });
   $: words = draft.trim() ? draft.trim().split(/\s+/).length : 0;
 
   function flush() {
@@ -65,13 +97,14 @@
     flush();
     updateConfig({ noteId: id });
     if (narrow) sidebarOpen = false;
-    tick().then(() => textarea?.focus());
+    tick().then(() => editor?.focus());
   }
 
   function newNote() {
-    const n = createNote('# ');
+    const n = createNote('# ', spaceForNew());
     open(n.id);
-    tick().then(() => textarea?.setSelectionRange(2, 2));
+    // after the editor has loaded the new note
+    tick().then(() => setTimeout(() => editor?.setCursor(2), 0));
   }
 
   function remove() {
@@ -92,73 +125,36 @@
     updateConfig({ mode: m });
   }
 
-  /* --------------------------------------------------------- editing */
-
-  async function replaceSelection(fn: (sel: string) => string, offsetStart: number, offsetEnd: number) {
-    const { selectionStart: a, selectionEnd: b } = textarea;
-    const sel = draft.slice(a, b);
-    draft = draft.slice(0, a) + fn(sel) + draft.slice(b);
-    onEdit();
-    await tick();
-    textarea.setSelectionRange(a + offsetStart, b + offsetEnd);
-  }
-
-  /**
-   * Enter on a list line starts the next item with the same syntax: "- ",
-   * "2. " (counted up) or "- [ ] " for task lines. Enter on an empty item
-   * ends the list instead. Returns true when it handled the key.
-   */
-  const LIST_LINE = /^(\s*)([-*+]|\d+[.)])(\s+)(\[[ xX]\]\s+)?(.*)$/;
-  async function continueList(e: KeyboardEvent): Promise<boolean> {
-    const pos = textarea.selectionStart;
-    if (pos !== textarea.selectionEnd) return false;
-    const lineStart = draft.lastIndexOf('\n', pos - 1) + 1;
-    const m = LIST_LINE.exec(draft.slice(lineStart, pos));
-    if (!m) return false;
-    const [, indent, marker, gap, box, rest] = m;
-    e.preventDefault();
-    if (!rest.trim()) {
-      // empty item: drop the marker and leave the list
-      draft = draft.slice(0, lineStart) + draft.slice(pos);
-      onEdit();
-      await tick();
-      textarea.setSelectionRange(lineStart, lineStart);
-      return true;
-    }
-    const num = /^(\d+)([.)])$/.exec(marker);
-    const next = num ? `${Number(num[1]) + 1}${num[2]}` : marker;
-    const insert = `\n${indent}${next}${gap}${box ? '[ ] ' : ''}`;
-    await replaceSelection(() => insert, insert.length, insert.length);
-    return true;
-  }
-
   /* -------------------------------------------------------- date / time */
 
   let pickerOpen = false;
   let pickerTime = false;
 
-  /** Insert text at the caret, replacing any selection. */
-  async function insertAtCaret(text: string) {
-    const len = text.length;
-    const span = textarea.selectionEnd - textarea.selectionStart;
-    await replaceSelection(() => text, len, len - span);
-  }
+  /** Where the picked date goes, and where the picker sits (at the caret). */
+  let pickerPos = 0;
+  let pickerStyle = '';
 
   /** The date picker writes [@date: 2026-11-28] or [@time: 2026-11-28 15:20]. */
   function pickDate(e: CustomEvent<string>) {
     pickerOpen = false;
-    if (e.detail) insertAtCaret(`${dateToken(e.detail)} `);
-    textarea?.focus();
+    if (e.detail) editor?.insert(`${dateToken(e.detail)} `, pickerPos);
+    else editor?.focus();
   }
 
-  /** Opened from the @ list: "pick a date…" / "pick date and time…". */
-  function openPicker(withTime: boolean) {
-    pickerTime = withTime;
+  /** Opened from the @ list ("pick a date…"), right under the caret. */
+  function openPickerAt(action: 'pick-date' | 'pick-time', pos: number) {
+    pickerTime = action === 'pick-time';
+    pickerPos = pos;
+    const c = editor?.coordsAt(pos);
+    const left = Math.max(8, Math.min(c?.left ?? 40, window.innerWidth - 300));
+    const below = !c || c.bottom + 380 < window.innerHeight;
+    pickerStyle = c
+      ? below
+        ? `left:${left}px;top:${c.bottom + 6}px`
+        : `left:${left}px;top:${c.top - 6}px;transform:translateY(-100%)`
+      : `left:${left}px;top:120px`;
     pickerOpen = true;
   }
-
-  // In a note, @ offers tasks and dates, and can open the date picker.
-  const mentionOpts = { target: 'task' as const, onAction: (a: 'pick-date' | 'pick-time') => openPicker(a === 'pick-time') };
 
   /* ------------------------------------------ chips in the preview */
 
@@ -301,43 +297,18 @@
   }
 
 
-  /* ----------------------------------------------- split scroll sync */
-
-  let preview: HTMLElement;
-  // which pane the user is scrolling, so the other one does not echo it back
-  let scrollingFrom: 'edit' | 'preview' | null = null;
-  let scrollRelease = 0;
-
-  function syncScroll(from: 'edit' | 'preview') {
-    if (mode !== 'split' || scrollingFrom === (from === 'edit' ? 'preview' : 'edit')) return;
-    const src = from === 'edit' ? textarea : preview;
-    const dst = from === 'edit' ? preview : textarea;
-    if (!src || !dst) return;
-    scrollingFrom = from;
-    const room = src.scrollHeight - src.clientHeight;
-    const ratio = room > 0 ? src.scrollTop / room : 0;
-    dst.scrollTop = ratio * (dst.scrollHeight - dst.clientHeight);
-    cancelAnimationFrame(scrollRelease);
-    scrollRelease = requestAnimationFrame(() => (scrollingFrom = null));
+  function onEditorChange(text: string) {
+    draft = text;
+    onEdit();
   }
 
-  function onKeyDown(e: KeyboardEvent) {
-    const mod = e.ctrlKey || e.metaKey;
-    if (e.key === 'Enter' && !mod && !e.shiftKey && !e.altKey) {
-      continueList(e);
-      return;
-    }
-    if (e.key === 'Tab' && !mod && !e.altKey) {
-      e.preventDefault();
-      replaceSelection(() => '  ', 2, 2 - (textarea.selectionEnd - textarea.selectionStart));
-    } else if (mod && !e.altKey && (e.key === 'b' || e.key === 'i')) {
-      e.preventDefault();
-      const mark = e.key === 'b' ? '**' : '_';
-      replaceSelection((s) => mark + s + mark, mark.length, mark.length);
-    } else if (mod && e.key === 's') {
-      e.preventDefault();
-      flush();
-    }
+  /** In the editor, a click on a chip opens what it points at. */
+  function onEditorClick(e: MouseEvent) {
+    const chip = chipOf(e);
+    if (!chip) return;
+    e.preventDefault();
+    card = null;
+    openMention(chip.dataset.kind as MentionKind, chip.dataset.id ?? '');
   }
 
   function onPreviewClick(e: MouseEvent) {
@@ -378,16 +349,65 @@
     const file = fileInput.files?.[0];
     if (!file) return;
     const text = await file.text();
-    const n = createNote(text.slice(0, 200_000));
+    const n = createNote(text.slice(0, 200_000), spaceForNew());
     fileInput.value = '';
     open(n.id);
+  }
+
+  /* ------------------------------------------------------ reordering */
+
+  // Drag a note in the list to move it; Mod+Shift+↑/↓ does the same from the keyboard.
+  let dragId: string | null = null;
+  let overId: string | null = null;
+  let overAfter = false;
+
+  function onDragStart(e: DragEvent, id: string) {
+    dragId = id;
+    e.dataTransfer?.setData('text/plain', id);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onDragOver(e: DragEvent, id: string) {
+    if (!dragId) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    overId = id;
+    overAfter = e.clientY > r.top + r.height / 2;
+  }
+
+  function onDrop(e: DragEvent) {
+    e.preventDefault();
+    if (dragId && overId && dragId !== overId) {
+      const ids = filtered.map((n) => n.id).filter((id) => id !== dragId);
+      ids.splice(ids.indexOf(overId) + (overAfter ? 1 : 0), 0, dragId);
+      reorderNotes(ids);
+    }
+    endDrag();
+  }
+
+  function endDrag() {
+    dragId = null;
+    overId = null;
+  }
+
+  function onItemKey(e: KeyboardEvent, id: string) {
+    if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') || search.trim()) return;
+    e.preventDefault();
+    const ids = filtered.map((n) => n.id);
+    const i = ids.indexOf(id);
+    const j = i + (e.key === 'ArrowUp' ? -1 : 1);
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    reorderNotes(ids);
+    tick().then(() => (document.querySelector(`[data-note-item="${id}"]`) as HTMLElement | null)?.focus());
   }
 
   /* ------------------------------------------------------------- focus */
 
   let wasFocused = false;
   $: {
-    if (focused && !wasFocused) tick().then(() => textarea?.focus({ preventScroll: true }));
+    if (focused && !wasFocused) tick().then(() => editor?.focus());
     wasFocused = focused;
   }
 
@@ -408,18 +428,34 @@
       </div>
       <ul class="list">
         {#each filtered as n (n.id)}
-          <li>
-            <button class="item" class:active={current?.id === n.id} on:click={() => open(n.id)}>
+          <li
+            draggable={!search.trim()}
+            class:dragging={dragId === n.id}
+            class:drop-before={overId === n.id && dragId !== n.id && !overAfter}
+            class:drop-after={overId === n.id && dragId !== n.id && overAfter}
+            on:dragstart={(e) => onDragStart(e, n.id)}
+            on:dragover={(e) => onDragOver(e, n.id)}
+            on:drop={onDrop}
+            on:dragend={endDrag}
+          >
+            <button
+              class="item"
+              class:active={current?.id === n.id}
+              data-note-item={n.id}
+              title={search.trim() ? undefined : 'Drag to reorder (or Mod+Shift+↑/↓)'}
+              on:click={() => open(n.id)}
+              on:keydown={(e) => onItemKey(e, n.id)}
+            >
               <span class="t">{#if n.pinned}<span class="pin">*</span>{/if}{titleOf(n)}</span>
               <span class="m">{timeAgo(n.updatedAt)}</span>
             </button>
           </li>
         {/each}
-        {#if filtered.length === 0}<li class="empty">{search ? 'no matches' : 'no notes yet'}</li>{/if}
+        {#if filtered.length === 0}<li class="empty">{search ? 'no matches' : 'no notes in this space yet'}</li>{/if}
       </ul>
       <div class="side-foot">
         <button on:click={() => fileInput.click()}>import .md</button>
-        <span>{$notes.length} {$notes.length === 1 ? 'note' : 'notes'}</span>
+        <span>{sorted.length} {sorted.length === 1 ? 'note' : 'notes'}</span>
       </div>
     </aside>
   {/if}
@@ -432,10 +468,13 @@
       <span class="title">{titleOf(current)}</span>
       <div class="modes" role="group" aria-label="View mode">
         {#each MODES as m}
-          <button class:on={mode === m} on:click={() => setMode(m)}>{m}</button>
+          <button class:on={mode === m.id} title={m.title} on:click={() => setMode(m.id)}>{m.id}</button>
         {/each}
       </div>
       {#if current}
+        <select class="space-pick" value={noteSpace(current)} on:change={(e) => current && moveNote(current.id, e.currentTarget.value)} title="Space this note belongs to" aria-label="Space">
+          {#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+        </select>
         <button class="txt" title="Pin to the top" on:click={() => togglePin(current.id)}>{current.pinned ? 'unpin' : 'pin'}</button>
         <button class="txt" title="Download as .md" on:click={exportNote}>export</button>
         <button class="txt danger" class:armed={confirmDelete} on:click={remove}>{confirmDelete ? 'confirm?' : 'delete'}</button>
@@ -444,33 +483,38 @@
 
     {#if current}
       <div class="panes mode-{mode}">
-        {#if pickerOpen && mode !== 'preview'}
-          <div class="date-pop at-editor">
+        {#if pickerOpen && mode !== 'read'}
+          <div class="date-pop at-caret" style={pickerStyle}>
             <DatePicker withTime={pickerTime} on:pick={pickDate} on:close={() => (pickerOpen = false)} />
           </div>
         {/if}
-        {#if mode !== 'preview'}
-          <textarea
-            bind:this={textarea}
-            use:mention={mentionOpts}
-            bind:value={draft}
-            on:input={onEdit}
-            on:keydown={onKeyDown}
-            on:scroll={() => syncScroll('edit')}
-            on:blur={flush}
-            spellcheck="false"
-            placeholder="# Title&#10;&#10;Write markdown here. Type @ for a task, @time, @date or @tmrw."
-            aria-label="Note editor"
-          />
-        {/if}
-        {#if mode !== 'edit'}
+        {#if mode !== 'read'}
+          <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions a11y-mouse-events-have-key-events -->
+          <div class="editor-wrap" on:click={onEditorClick} on:mouseover={onPreviewOver} on:mouseout={onPreviewOut} on:contextmenu={onPreviewMenu}>
+            {#if LiveEditor}
+              <svelte:component
+                this={LiveEditor}
+                bind:this={editor}
+                value={draft}
+                docKey={current.id}
+                live={mode === 'live'}
+                placeholder="Write here. # for a heading, - for a list, @ for a task, @time, @date or @tmrw."
+                refresh={chipTick}
+                onChange={onEditorChange}
+                onSave={flush}
+                onBlur={flush}
+                onAction={openPickerAt}
+              />
+            {:else}
+              <p class="loading">loading the editor…</p>
+            {/if}
+          </div>
+        {:else}
           <!-- Chips are focusable; focusin/focusout below give keyboard users the same card as hover. -->
           <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions a11y-mouse-events-have-key-events -->
           <article
             class="md"
-            bind:this={preview}
             on:scroll={() => {
-              syncScroll('preview');
               if (card) card = null;
             }}
             on:click={onPreviewClick}
@@ -513,7 +557,7 @@
       {#if card.kind === 'task'}
         {#if cardTask}
           <div class="mc-head">
-            <span class="state" class:done={cardTask.done} aria-hidden="true" />
+            <span class="tstate" class:done={cardTask.done} aria-hidden="true" />
             <span class:struck={cardTask.done}><b>#{cardTask.no}</b> {cardTask.text}</span>
           </div>
           <div class="mc-meta">
@@ -726,35 +770,42 @@
     min-height: 0;
     display: grid;
   }
-  .panes.mode-split {
-    grid-template-columns: 1fr 1fr;
+  .editor-wrap {
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
   }
-  textarea {
-    width: 100%;
-    height: 100%;
-    resize: none;
-    padding: 12px 14px;
-    border: 0;
-    outline: none;
-    background: transparent;
-    color: var(--t2);
-    font: inherit;
-    font-size: 13px;
-    line-height: 1.6;
-    tab-size: 2;
-  }
-  textarea::placeholder {
+  .loading {
+    padding: 14px 20px;
     color: var(--t1);
-    opacity: 0.6;
-  }
-  .mode-split textarea {
-    border-right: 1px dashed color-mix(in srgb, var(--bg2) 80%, transparent);
   }
   .md {
     overflow: auto;
     padding: 12px 16px 24px;
     line-height: 1.65;
     min-width: 0;
+  }
+  .side li.dragging {
+    opacity: 0.4;
+  }
+  .side li.drop-before {
+    box-shadow: inset 0 2px 0 var(--hl1);
+  }
+  .side li.drop-after {
+    box-shadow: inset 0 -2px 0 var(--hl1);
+  }
+  .side li[draggable='true'] .item {
+    cursor: grab;
+  }
+  .space-pick {
+    max-width: 120px;
+    padding: 1px 4px;
+    border: 1px solid var(--bg2);
+    border-radius: 6px;
+    background: var(--bg1);
+    color: var(--t1);
+    font: inherit;
+    font-size: 11px;
   }
   .foot {
     display: flex;
@@ -889,10 +940,6 @@
   }
 
   @media (max-width: 720px) {
-    .panes.mode-split {
-      grid-template-columns: 1fr;
-      grid-template-rows: 1fr 1fr;
-    }
     /* Let the toolbar wrap instead of clipping pin / export / delete off the edge. */
     .bar {
       flex-wrap: wrap;
@@ -910,12 +957,13 @@
   .panes {
     position: relative;
   }
-  .date-pop.at-editor {
-    top: 8px;
-    right: 12px;
+  .date-pop.at-caret {
+    position: fixed;
+    right: auto;
+    z-index: 130;
   }
-  /* Chips in the preview: [@task: #12], [@date: ...], [@time: ...], [@note: ...] */
-  :global(.md .mention) {
+  /* Chips in the editor and the reading view: [@task: #12], [@date: ...], [@time: ...], [@note: ...] */
+  .notes :global(.mention) {
     display: inline-flex;
     align-items: center;
     gap: 5px;
@@ -929,27 +977,27 @@
     cursor: pointer;
     outline: none;
   }
-  :global(.md .mention:hover),
-  :global(.md .mention:focus-visible) {
+  .notes :global(.mention:hover),
+  .notes :global(.mention:focus-visible) {
     border-color: var(--hl1);
     color: var(--hl1);
   }
-  :global(.md .mention .ico) {
+  .notes :global(.mention .ico) {
     position: relative;
     flex: none;
     box-sizing: border-box;
   }
   /* task: a circle, filled with a tick once done */
-  :global(.md .mention.task .ico) {
+  .notes :global(.mention.task .ico) {
     width: 10px;
     height: 10px;
     border: 1.5px solid var(--hl1);
     border-radius: 50%;
   }
-  :global(.md .mention.task.done .ico) {
+  .notes :global(.mention.task.done .ico) {
     background: var(--hl1);
   }
-  :global(.md .mention.task.done .ico::after) {
+  .notes :global(.mention.task.done .ico::after) {
     content: '';
     position: absolute;
     left: 2.2px;
@@ -960,23 +1008,23 @@
     border-width: 0 1.5px 1.5px 0;
     transform: rotate(45deg);
   }
-  :global(.md .mention.task.done .lbl) {
+  .notes :global(.mention.task.done .lbl) {
     color: var(--t1);
     text-decoration: line-through;
   }
   /* date: a little calendar page; time: a clock */
-  :global(.md .mention.date .ico) {
+  .notes :global(.mention.date .ico) {
     width: 10px;
     height: 10px;
     border: 1.5px solid var(--hl1);
     border-top-width: 3px;
     border-radius: 2px;
   }
-  :global(.md .mention.date.time .ico) {
+  .notes :global(.mention.date.time .ico) {
     border-top-width: 1.5px;
     border-radius: 50%;
   }
-  :global(.md .mention.date.time .ico::after) {
+  .notes :global(.mention.date.time .ico::after) {
     content: '';
     position: absolute;
     left: 3px;
@@ -986,28 +1034,28 @@
     border: solid var(--hl1);
     border-width: 0 0 1.5px 1.5px;
   }
-  :global(.md .mention .rel) {
+  .notes :global(.mention .rel) {
     color: var(--t1);
     font-size: 0.85em;
   }
   /* note: a page */
-  :global(.md .mention.note) {
+  .notes :global(.mention.note) {
     border-color: color-mix(in srgb, var(--t1) 40%, transparent);
     background: color-mix(in srgb, var(--bg2) 35%, transparent);
   }
-  :global(.md .mention.note .ico) {
+  .notes :global(.mention.note .ico) {
     width: 8px;
     height: 10px;
     border: 1.5px solid var(--t1);
     border-radius: 1px;
   }
-  :global(.md .mention.missing) {
+  .notes :global(.mention.missing) {
     border-style: dashed;
     border-color: var(--t1);
     background: none;
     color: var(--t1);
   }
-  :global(.md .mention.missing .ico) {
+  .notes :global(.mention.missing .ico) {
     border-color: var(--t1);
     background: none;
   }
@@ -1038,7 +1086,7 @@
     font-size: 13px;
     overflow-wrap: anywhere;
   }
-  .state {
+  .tstate {
     flex: none;
     width: 12px;
     height: 12px;
@@ -1047,7 +1095,7 @@
     border-radius: 50%;
     box-sizing: border-box;
   }
-  .state.done {
+  .tstate.done {
     background: var(--hl1);
   }
   .struck {

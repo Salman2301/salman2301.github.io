@@ -44,6 +44,7 @@ export const themes = {
 
 export type ThemeName = keyof typeof themes;
 export const themeNames = Object.keys(themes) as ThemeName[];
+export const isThemeName = (v: unknown): v is ThemeName => typeof v === 'string' && v in themes;
 
 function isLight(hex: string) {
   const n = parseInt(hex.slice(1), 16);
@@ -91,7 +92,15 @@ export const lightTheme = persisted<ThemeName>('theme:light', legacy && kindOf(l
 const osDark = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-color-scheme: dark)') : null;
 const systemKind = (): 'dark' | 'light' => (osDark && !osDark.matches ? 'light' : 'dark');
 
+/**
+ * A theme that wins over the mode and picks while set: the active space's own
+ * theme. Null shows the normal theme.
+ */
+export const themeOverride = writable<ThemeName | null>(null);
+
 function effective(): ThemeName {
+  const forced = get(themeOverride);
+  if (isName(forced)) return forced;
   const mode = get(themeMode);
   const kind = mode === 'system' ? systemKind() : mode;
   const pick = kind === 'dark' ? get(darkTheme) : get(lightTheme);
@@ -108,6 +117,7 @@ function refresh() {
 }
 
 themeMode.subscribe(refresh);
+themeOverride.subscribe(refresh);
 darkTheme.subscribe(refresh);
 lightTheme.subscribe(refresh);
 osDark?.addEventListener('change', refresh);
@@ -133,6 +143,8 @@ themeStore.subscribe(applyTheme);
  */
 export function setTheme(name: string): boolean {
   if (!isName(name)) return false;
+  // Picking a theme by hand shows it, even inside a space with its own theme.
+  themeOverride.set(null);
   const kind = kindOf(name);
   (kind === 'dark' ? darkTheme : lightTheme).set(name);
   if (!(get(themeMode) === 'system' && systemKind() === kind)) themeMode.set(kind);
@@ -140,11 +152,13 @@ export function setTheme(name: string): boolean {
 }
 
 export function setThemeMode(mode: ThemeMode) {
+  themeOverride.set(null);
   themeMode.set(mode);
 }
 
 /** system → dark → light → system. Returns the new mode. */
 export function cycleThemeMode(): ThemeMode {
+  themeOverride.set(null);
   const next = THEME_MODES[(THEME_MODES.indexOf(get(themeMode)) + 1) % THEME_MODES.length];
   themeMode.set(next);
   return next;
