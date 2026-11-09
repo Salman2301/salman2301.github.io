@@ -17,6 +17,6 @@
   {focused}
   {config}
   {updateConfig}
-  hint="music.youtube.com can't be embedded, so songs, albums and playlists play through YouTube's player."
+  hint="Plays through YouTube's player, since music.youtube.com can't be embedded."
   note="music.youtube.com can't be embedded, so this plays through YouTube's player. Paste any song, album or playlist link."
 />

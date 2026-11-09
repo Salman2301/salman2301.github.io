@@ -42,12 +42,17 @@ function darkTheme(): boolean {
 
 /**
  * Spotify's embed has three layouts: an 80px strip, a 152px card and the
- * full player with a track list from 352px up. Pick the biggest that fits.
+ * full player with a track list from 352px up. Heights in between only add
+ * blank space under the smaller layout, so pick the biggest that fits, with
+ * a little air above and below when that does not cost a size step. The
+ * card cuts off its play button when narrow, where the strip still fits.
  */
-export function fitSpotify(available: number): number {
-  if (available >= 352) return available;
-  if (available >= 152) return 152;
-  return 80;
+export function fitSpotify(width: number, height: number): number {
+  const airy = height - 12;
+  if (airy >= 352) return airy;
+  if (height >= 352) return height;
+  if (height >= 152 && width >= 280) return 152;
+  return Math.min(80, height);
 }
 
 export const SPOTIFY: MediaSource = {

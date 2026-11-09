@@ -41,16 +41,23 @@ function mixSeed(list: string | null): string | undefined {
   return m?.[1];
 }
 
+/**
+ * Embed paths that happen to be 11 characters long but are not video ids:
+ * embed/videoseries?list=... is a playlist, and embed/live_stream?channel=...
+ * (a channel's current stream) showed "video unavailable" when tried, so it
+ * gets the inline error instead of a broken player.
+ */
+const NOT_VIDEOS = new Set(['videoseries', 'live_stream']);
+
 function videoFromPath(path: string): string | undefined {
   const m = /^\/(?:embed|shorts|live|v|e|watch)\/([\w-]{11})(?:[/?#]|$)/.exec(path);
-  // embed/videoseries?list=... is a playlist, not a video called "videoseries"
-  return m && m[1] !== 'videoseries' ? m[1] : undefined;
+  return m && !NOT_VIDEOS.has(m[1]) ? m[1] : undefined;
 }
 
 /** Any YouTube or YouTube Music link, a bare 11-character video id or a bare playlist id. */
 export function parseYouTube(input: string): MediaItem | null {
   const text = input.trim();
-  if (VIDEO_ID.test(text)) return { kind: 'video', id: text };
+  if (VIDEO_ID.test(text) && !NOT_VIDEOS.has(text)) return { kind: 'video', id: text };
   if (BARE_LIST.test(text)) return { kind: 'playlist', id: text };
   const url = toUrl(text);
   if (!url) return null;
@@ -82,7 +89,7 @@ export function parseYouTube(input: string): MediaItem | null {
 }
 
 export function isValidYouTube(item: MediaItem): boolean {
-  if (item.kind === 'video') return VIDEO_ID.test(item.id) && (!item.list || LIST_ID.test(item.list));
+  if (item.kind === 'video') return VIDEO_ID.test(item.id) && !NOT_VIDEOS.has(item.id) && (!item.list || LIST_ID.test(item.list));
   return item.kind === 'playlist' && LIST_ID.test(item.id);
 }
 

@@ -18,5 +18,5 @@
   {focused}
   {config}
   {updateConfig}
-  note="Plays through YouTube's privacy-enhanced player (youtube-nocookie.com). Tip: / jumps to the link box, p opens this menu."
+  note="Plays through YouTube's privacy-enhanced player (youtube-nocookie.com)."
 />
