@@ -332,6 +332,9 @@ export interface ZoneRow {
   city: string;
   time: string;
   weekday: string;
+  /** Calendar days ahead of the local date. */
+  days: number;
+  /** The same as text: "+1 day", or "" for today. */
   day: string;
   relative: string;
   utc: string;
@@ -341,12 +344,14 @@ export interface ZoneRow {
 export function describeZone(zone: string, date: Date, hour12: boolean): ZoneRow {
   const w = wallTime(zone, date);
   const offset = utcOffset(zone, date);
+  const days = dayOffset(zone, date);
   return {
     zone,
     city: cityName(zone),
     time: formatHM(w.hour, w.minute, hour12),
     weekday: WEEKDAYS[w.weekday],
-    day: formatDayOffset(dayOffset(zone, date)),
+    days,
+    day: formatDayOffset(days),
     relative: formatRelativeOffset(offset + date.getTimezoneOffset()),
     utc: formatUtcOffset(offset),
     daytime: isDaytime(w.hour),

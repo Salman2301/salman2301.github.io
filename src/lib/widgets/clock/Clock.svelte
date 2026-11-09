@@ -33,17 +33,19 @@
   let error = '';
 
   // Breakpoints: tiny shows only the time, medium adds the date and the face
-  // switches, roomy adds world clocks and the key hint.
+  // switches (plus a one-line strip of world times when there is height for
+  // it), roomy adds the full world clock list and the key hint.
   $: tiny = w > 0 && (w < 240 || h < 150);
   $: roomy = !tiny && w >= 340 && h >= 320;
-  $: wide = roomy && w >= 700 && w > h * 1.4;
+  $: wide = roomy && w >= 620 && w > h * 1.4;
+  $: strip = !tiny && !roomy && zones.length > 0 && h >= 200;
 
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
   const pad = (n: number) => String(n).padStart(2, '0');
 
   $: dateSize = clamp(fw * 0.034, 11, 18);
-  $: dateSpace = tiny ? 0 : dateSize * 1.4 + 10;
-  // "88:88" in a monospace face is 3em wide, plus the small seconds column
+  $: dateSpace = tiny ? 0 : dateSize * 1.4 + 10 + (strip ? 28 : 0);
+  // "88:88" in tabular digits is about 3em wide, plus the small seconds column
   $: fontSize = clamp(Math.min((fw - 8) / 3.55, (fh - dateSpace) / 1.08), 16, 280);
   $: dialSize = clamp(Math.min(fw - 8, fh - dateSpace - 4), 48, 520);
 
@@ -57,7 +59,7 @@
     undefined,
     fw < 360 ? { weekday: 'short', day: 'numeric', month: 'short' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' },
   );
-  $: rows = roomy ? zones.map((z) => describeZone(z, now, hour12)) : [];
+  $: rows = roomy || strip ? zones.map((z) => describeZone(z, now, hour12)) : [];
   $: here = localZone();
   $: hereLabel = `${cityName(here)} · ${formatUtcOffset(utcOffset(here, now))}`;
   $: zoneOptions = roomy ? allZones() : [];
@@ -83,6 +85,8 @@
 
   function removeZone(zone: string) {
     updateConfig({ zones: zones.filter((z) => z !== zone) });
+    // the focused x button goes with its row; keep the keys in this pane
+    keepFocus();
   }
 
   function onKey(e: KeyboardEvent) {
@@ -94,12 +98,16 @@
     e.preventDefault();
   }
 
+  /** Focus the pane root unless something inside it already has focus. */
+  function keepFocus() {
+    tick().then(() => {
+      if (root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
+    });
+  }
+
   let wasFocused = false;
   $: {
-    if (focused && !wasFocused)
-      tick().then(() => {
-        if (root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
-      });
+    if (focused && !wasFocused) keepFocus();
     wasFocused = focused;
   }
 </script>
@@ -131,6 +139,17 @@
       {#if !tiny}
         <p class="date" style="font-size:{dateSize}px">{dateText}</p>
       {/if}
+      {#if strip}
+        <!-- one line only: chips that wrap to a second line are clipped away -->
+        <ul class="zone-strip" aria-label="World clocks">
+          {#each rows as r (r.zone)}
+            <li title="{r.zone} · {r.relative} · {r.utc}">
+              <span class="strip-city">{r.city}</span>
+              {r.time}{#if r.days}<span class="strip-day">{r.days > 0 ? '+' : '−'}{Math.abs(r.days)}d</span>{/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </div>
 
     {#if roomy}
@@ -153,7 +172,7 @@
               </li>
             {/each}
           </ul>
-        {:else}
+        {:else if h >= 440}
           <p class="zone-empty">Add a city to compare times, e.g. Tokyo or New York.</p>
         {/if}
         <form class="add-zone" on:submit|preventDefault={addZone}>
@@ -274,6 +293,32 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
+  }
+
+  .zone-strip {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0 16px;
+    max-width: 100%;
+    height: 18px;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12px;
+    line-height: 18px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .strip-city {
+    color: var(--t1);
+    margin-right: 2px;
+  }
+  .strip-day {
+    margin-left: 4px;
+    font-size: 10px;
+    color: var(--hl1);
   }
 
   /* world clocks */
@@ -457,6 +502,15 @@
     font-size: 10.5px;
     color: var(--t1);
     opacity: 0.8;
+  }
+
+  /* Phones stack the panes and size each frame by its content, so give the
+     pane the height of its slot (72vh, less the 38px header) instead of the
+     few pixels its flexible face area would collapse to. */
+  @media (max-width: 720px) {
+    .clock-pane {
+      min-height: max(240px, calc(72vh - 38px));
+    }
   }
 
   @media (max-width: 720px), (pointer: coarse) {

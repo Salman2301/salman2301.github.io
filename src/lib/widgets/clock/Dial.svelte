@@ -47,9 +47,12 @@
   $: minutes = d.getMinutes() + seconds / 60;
   $: hours = (d.getHours() % 12) + minutes / 60;
   $: numerals = size >= 150;
+  // the label only changes once a minute, so do not format it every frame
+  $: minute = Math.floor(t / 60_000);
+  $: label = new Date(minute * 60_000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 </script>
 
-<svg class="dial-face" viewBox="0 0 200 200" width={size} height={size} role="img" aria-label="Analog clock {d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}">
+<svg class="dial-face" viewBox="0 0 200 200" width={size} height={size} role="img" aria-label="Analog clock {label}">
   <circle class="plate" cx={C} cy={C} r="96" />
   {#each TICKS as i}
     <line class="mark" class:mark-hour={i % 5 === 0} x1={C} y1="9" x2={C} y2={i % 5 === 0 ? 21 : 14} transform="rotate({i * 6} {C} {C})" />

@@ -6,7 +6,7 @@ import {
   remainingMsOf, stopwatch, swLap, swReset, swStart, swStop,
 } from '../widgets/timer/engine';
 import {
-  allZones, cityName, describeZone, formatUtcOffset, isValidZone, localZone, prefers12h, resolveZone, utcOffset,
+  allZones, cityName, describeZone, isValidZone, localZone, prefers12h, resolveZone, type ZoneRow,
 } from '../widgets/clock/zones';
 
 const usageOf = (ctx: CommandContext, rest: string) => `usage: ${ctx.raw.trim().split(/\s+/)[0]} ${rest}`;
@@ -57,7 +57,7 @@ const timer: CommandDef = {
       return ctx.print(countdownStatus(), 'success');
     }
     const ms = parseDuration(text);
-    if (!ms) return ctx.print(`${usageOf(ctx, TIMER_USAGE)}\nlengths: 90s, 1:30, 5m, 1h20m (a bare number is minutes)`, 'error');
+    if (!ms) return ctx.print(`${usageOf(ctx, TIMER_USAGE)}\nlengths: 90s, 1:30, 5m, 1h20m (a bare number is minutes), from 1s up to 100h`, 'error');
     cdStart(ms);
     ctx.print(`countdown ${formatLength(ms)} started · ends at ${formatAt(Date.now() + ms)}`, 'success');
   },
@@ -170,13 +170,13 @@ function pickZone(zones: string[], text: string): string | undefined {
 function zoneTable(zones: string[], hour12: boolean): string {
   const at = new Date();
   const here = localZone();
-  const local = describeZone(here, at, hour12);
-  const line = (label: string, city: string, r: ReturnType<typeof describeZone>, extra: string) =>
-    `${label.padStart(4)}  ${city.padEnd(18)} ${r.weekday} ${r.time.padEnd(8)}  ${extra}`;
-  const out = [line('here', cityName(here), local, formatUtcOffset(utcOffset(here, at)))];
+  // columns: label, city, weekday and time, offset from here, UTC offset, day change
+  const line = (label: string, r: ZoneRow, relative: string) =>
+    `${label.padStart(4)}  ${r.city.padEnd(18)} ${r.weekday} ${r.time.padEnd(8)}  ${relative.padEnd(10)} ${r.utc.padEnd(9)} ${r.day}`.trimEnd();
+  const out = [line('here', describeZone(here, at, hour12), '')];
   zones.forEach((z, i) => {
     const r = describeZone(z, at, hour12);
-    out.push(line(String(i + 1), r.city, r, [r.day, r.relative, r.utc].filter(Boolean).join('  ')));
+    out.push(line(String(i + 1), r, r.relative));
   });
   return out.join('\n');
 }

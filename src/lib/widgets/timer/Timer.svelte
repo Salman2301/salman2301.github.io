@@ -77,6 +77,11 @@
         ? `paused · ${formatLength($countdown.durationMs)} timer`
         : `${formatLength($countdown.durationMs)} timer`;
   $: parsed = parseDuration(draft);
+  // what the hidden mode is doing, flagged with a dot on its tab
+  $: activity = {
+    stopwatch: $stopwatch.running ? `stopwatch running · ${swMain}` : '',
+    countdown: $countdown.running ? `countdown running · ${cdMain} left` : done ? "time's up" : '',
+  } as Record<Mode, string>;
 
   /* ------------------------------------------------------ breakpoints */
 
@@ -86,7 +91,7 @@
   $: showPresets = mode === 'countdown' && !tiny && h >= 240;
   $: showCustom = mode === 'countdown' && roomy;
 
-  // How wide the readout is, in em: monospace digits are 0.6em, the
+  // How wide the readout is, in em: tabular digits are about 0.6em, the
   // stopwatch's centiseconds are half size.
   $: readoutEms = mode === 'stopwatch' ? swMain.length * 0.6 + 0.95 : cdMain.length * 0.6 + 0.05;
   // Vertical room left once the tabs, buttons, laps or presets took theirs.
@@ -153,14 +158,20 @@
     }
     // also stops Space from clicking whichever button has focus
     e.preventDefault();
+    // switching modes removes the focused button; keep the keys in this pane
+    keepFocus();
+  }
+
+  /** Focus the pane root unless something inside it already has focus. */
+  function keepFocus() {
+    tick().then(() => {
+      if (root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
+    });
   }
 
   let wasFocused = false;
   $: {
-    if (focused && !wasFocused)
-      tick().then(() => {
-        if (root && !root.contains(document.activeElement)) root.focus({ preventScroll: true });
-      });
+    if (focused && !wasFocused) keepFocus();
     wasFocused = focused;
   }
 </script>
@@ -179,7 +190,9 @@
   {#if !tiny}
     <div class="mode-tabs" role="tablist" aria-label="Timer mode">
       {#each MODES as m}
-        <button role="tab" aria-selected={mode === m} class:on={mode === m} on:click={() => setMode(m)}>{m}</button>
+        <button role="tab" aria-selected={mode === m} class:on={mode === m} on:click={() => setMode(m)} title={mode === m ? undefined : activity[m]}>
+          {m}{#if mode !== m && activity[m]}<span class="tab-dot" class:tab-dot-done={activity[m] === "time's up"} />{/if}
+        </button>
       {/each}
     </div>
   {/if}
@@ -193,8 +206,9 @@
     {/if}
     <div class="controls">
       <button class="primary" on:click={swToggle}>{$stopwatch.running ? 'stop' : elapsed ? 'resume' : 'start'}</button>
-      <button on:click={swLap} disabled={!$stopwatch.running}>lap</button>
-      <button on:click={swReset} disabled={!elapsed && !laps.length}>reset</button>
+      <!-- aria-disabled, not disabled: a disabled button drops focus, and the pane's keys with it -->
+      <button on:click={swLap} aria-disabled={!$stopwatch.running}>lap</button>
+      <button on:click={swReset} aria-disabled={!elapsed && !laps.length}>reset</button>
     </div>
     {#if showLaps}
       <div class="lap-panel">
@@ -219,7 +233,7 @@
         {/if}
       </div>
     {/if}
-    {#if roomy}<p class="key-hint">space start/stop · l lap · r reset</p>{/if}
+    {#if roomy}<p class="key-hint">space start/stop · l lap · r reset · c countdown</p>{/if}
   {:else}
     <div class="readout" class:live={$countdown.running} style="font-size:{fontSize}px" role="timer" aria-label="Countdown {cdMain} left">
       {cdMain}
@@ -230,7 +244,7 @@
     {#if !tiny}<p class="state-label">{cdLabel}</p>{/if}
     <div class="controls">
       <button class="primary" on:click={cdToggle}>{cdPrimary}</button>
-      <button on:click={cdReset} disabled={!$countdown.running && left === $countdown.durationMs && !done}>reset</button>
+      <button on:click={cdReset} aria-disabled={!$countdown.running && left === $countdown.durationMs && !done}>reset</button>
       <button on:click={() => cdAdd(60_000)} title="Add a minute (+)">+1 min</button>
     </div>
     {#if showPresets}
@@ -255,7 +269,7 @@
         <button type="submit" disabled={!parsed}>{parsed ? `start ${formatLength(parsed)}` : 'start'}</button>
       </form>
     {/if}
-    {#if roomy}<p class="key-hint">space start/pause · r reset · + add a minute</p>{/if}
+    {#if roomy}<p class="key-hint">space start/pause · r reset · + add a minute · s stopwatch</p>{/if}
   {/if}
 </div>
 
@@ -298,6 +312,23 @@
   .mode-tabs button.on {
     background: var(--hl1);
     color: var(--bg1);
+  }
+  .tab-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-left: 6px;
+    vertical-align: 0.1em;
+    border-radius: 50%;
+    background: var(--hl1);
+  }
+  .tab-dot-done {
+    animation: dot-blink 1s steps(2, jump-none) 6;
+  }
+  @keyframes dot-blink {
+    to {
+      opacity: 0.2;
+    }
   }
 
   .readout {
@@ -357,11 +388,11 @@
     font-size: 12px;
     white-space: nowrap;
   }
-  .controls button:hover:not(:disabled) {
+  .controls button:hover:not([aria-disabled='true']) {
     border-color: var(--hl1);
     color: var(--hl1);
   }
-  .controls button:disabled {
+  .controls button[aria-disabled='true'] {
     opacity: 0.4;
     cursor: default;
   }
@@ -371,7 +402,7 @@
     color: var(--bg1);
     min-width: 76px;
   }
-  .controls .primary:hover:not(:disabled) {
+  .controls .primary:hover {
     color: var(--bg1);
     filter: brightness(1.1);
   }
@@ -554,6 +585,21 @@
     }
     to {
       background: color-mix(in srgb, var(--hl1) 30%, var(--bg1));
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .alarm,
+    .tab-dot-done {
+      animation: none;
+    }
+  }
+
+  /* Phones stack the panes and size each frame by its content, so give the
+     pane the height of its slot (72vh, less the 38px header) instead of the
+     few pixels a centred flex column would collapse to. */
+  @media (max-width: 720px) {
+    .timer-pane {
+      min-height: max(240px, calc(72vh - 38px));
     }
   }
 
