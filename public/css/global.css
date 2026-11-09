@@ -34,8 +34,11 @@ body {
 }
 
 @media (max-width: 720px) {
+  /* The page never scrolls on a phone: panes scroll inside, and you swipe between them. */
+  html,
   body {
-    overflow: auto;
+    overflow: hidden;
+    overscroll-behavior: none;
     -webkit-text-size-adjust: 100%;
   }
   /* iOS Safari zooms the whole page when an input is focused below 16px. */

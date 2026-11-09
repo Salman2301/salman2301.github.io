@@ -140,11 +140,24 @@ Everything is saved in your browser's local storage. Nothing is sent to a server
 
 **Clock** (focused): `A` digital / analog, `H` 12h / 24h. **Games**: WASD or arrows move, `Space` pauses.
 
+**On a phone**: swipe left or right between panes, tap the chips in the bottom bar, and use **+** for everything the `Alt` keys do; see [On a phone](#on-a-phone).
+
 ## Advanced setup
 
 ### Install it as an app
 
 Run `install`, or use the install icon in the address bar (Chrome, Edge), **File > Add to Dock** (Safari on a Mac), or **Share > Add to Home Screen** (iPhone, iPad). The app gets its own window, opens offline (every file is cached the first time you visit), and reminders show as system notifications while it is open in the background. After an update you get a "new version" note; reload to use it.
+
+### On a phone
+
+Below 720px wide the workspace switches to a phone layout:
+
+- **One pane per screen.** Swipe left or right to move between panes, or tap a pane's chip in the bar at the bottom. Each pane scrolls its own content; the page itself never scrolls.
+- **+** opens a sheet with every widget, and the actions that are `Alt` shortcuts on a computer (templates, new terminal, close pane, new tab, themes, radio, screensaver, install, backup).
+- **Search** is the magnifier next to it.
+- **Typing**: the layout shrinks to the part of the screen above the keyboard and the bottom bars step aside, so the prompt or field you are in stays visible. Fields are never focused on their own, so swiping does not pop the keyboard up.
+- **Terminal key row**: `tab`, `↑`, `↓`, `→`, `esc`, `^C`, `^L` and `^U` sit under the prompt, since phone keyboards do not have them.
+- Games keep their on-screen pad, and the calendar keeps pinch to zoom and its own swipe for the next page (swipe on the pane's title bar or use the chips to change pane there).
 
 ### Sync between computers
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isTouch } from '../../core/device';
   import { onDestroy, tick } from 'svelte';
   import { friendlyDate, parseDate, ymd } from '../../core/dates';
   import { openMention } from '../../core/mentions';
@@ -78,7 +79,7 @@
 
   let wasFocused = false;
   $: {
-    if (focused && !wasFocused) tick().then(() => input?.focus({ preventScroll: true }));
+    if (focused && !wasFocused && !isTouch()) tick().then(() => input?.focus({ preventScroll: true }));
     wasFocused = focused;
   }
 </script>

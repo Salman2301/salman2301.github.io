@@ -146,13 +146,6 @@
     color: var(--hl1);
     background: color-mix(in srgb, var(--bg2) 60%, transparent);
   }
-  @media (max-width: 720px) {
-    .tabbar {
-      position: sticky;
-      top: 0;
-      z-index: 30;
-    }
-  }
   .space {
     display: inline-flex;
     align-items: center;

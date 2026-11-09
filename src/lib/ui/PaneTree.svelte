@@ -143,19 +143,4 @@
     opacity: 0.8;
   }
 
-  @media (max-width: 720px) {
-    .split.row,
-    .split.column {
-      flex-direction: column;
-      height: auto;
-    }
-    .cell {
-      flex: none !important;
-      min-height: 72vh;
-    }
-    .divider {
-      flex-basis: 8px;
-      pointer-events: none;
-    }
-  }
 </style>
