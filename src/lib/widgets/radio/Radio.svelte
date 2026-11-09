@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Config } from '../../core/types';
-  import { radioPrefs, radioState, setVolume, toggleRadio, tune, type RadioStatus } from './player';
+  import { radioPrefs, radioState, setVolume, stepStation, toggleRadio, tune, type RadioStatus } from './player';
   import { STATIONS } from './stations';
 
   export let paneId: string;
@@ -33,10 +33,7 @@
   $: showNote = roomy || (compact && h >= 280);
   $: showCredit = roomy && h >= 460;
 
-  $: index = Math.max(0, STATIONS.findIndex((st) => st.slug === s.station.slug));
-  function step(dir: number) {
-    tune(STATIONS[(index + dir + STATIONS.length) % STATIONS.length]);
-  }
+  const step = (dir: 1 | -1) => stepStation(dir);
 
   function volume(e: Event) {
     setVolume(Number((e.currentTarget as HTMLInputElement).value));

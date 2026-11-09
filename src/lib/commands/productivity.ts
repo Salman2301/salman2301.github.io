@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
+import { focusOn } from '../widgets/pomodoro/engine';
 import type { CommandDef } from '../core/types';
-import { activeTaskId, addTask, clearDone, removeTask, setActiveTask, taskByNo, tasks, toggleTask } from '../core/tasks';
+import { activeTaskId, addTask, clearDone, moveTask, projects, removeTask, taskByNo, tasks, toggleTask } from '../core/tasks';
 import { openWidget } from '../core/workspace';
 import {
   fmt, MODE_LABEL, pause, pomodoro, pomodoroStats, remainingMs, reset, setDurations, skip, start, todayKey,
@@ -45,10 +46,15 @@ const commands: CommandDef[] = [
   {
     name: 'todo',
     aliases: ['task', 'tasks'],
-    description: 'task list: add, done, rm, focus, ls, clear',
-    usage: 'todo [add <text>|done <n>|undo <n>|rm <n>|focus <n>|ls|clear]',
+    description: 'task list: add, done, rm, focus, mv (to a space), ls, clear',
+    usage: 'todo [add <text>|done <n>|undo <n>|rm <n>|focus <n>|mv <n> <space>|ls|clear]',
     group: 'widgets',
-    complete: (args) => (args.length <= 1 ? ['add', 'done', 'undo', 'rm', 'focus', 'ls', 'clear'] : get(tasks).map((t) => String(t.no))),
+    complete: (args) =>
+      args.length <= 1
+        ? ['add', 'done', 'undo', 'rm', 'focus', 'mv', 'ls', 'clear']
+        : args[0] === 'mv' && args.length === 3
+          ? get(projects).map((p) => p.name.toLowerCase())
+          : get(tasks).map((t) => String(t.no)),
     run: (ctx) => {
       const [sub, ...rest] = ctx.args;
       const pick = () => {
@@ -73,11 +79,20 @@ const commands: CommandDef[] = [
         return t ? ctx.print(`added #${t.no}: ${t.text}`, 'success') : ctx.print('usage: todo add <text>', 'error');
       }
       if (sub === 'clear') return clearDone(), ctx.print('cleared finished tasks', 'muted');
+      if (sub === 'mv' || sub === 'move') {
+        const t = pick();
+        if (!t) return;
+        const q = rest.slice(1).join(' ').trim().toLowerCase();
+        const space = get(projects).find((p) => p.name.toLowerCase() === q) ?? get(projects).find((p) => p.name.toLowerCase().startsWith(q));
+        if (!q || !space) return ctx.print(`usage: todo mv <n> <space>. Spaces: ${get(projects).map((p) => p.name).join(', ')}`, 'error');
+        moveTask(t.id, space.id);
+        return ctx.print(`moved #${t.no} to ${space.name}`, 'success');
+      }
       if (['done', 'undo', 'rm', 'focus'].includes(sub)) {
         const t = pick();
         if (!t) return;
         if (sub === 'rm') removeTask(t.id);
-        else if (sub === 'focus') setActiveTask(t.id);
+        else if (sub === 'focus') focusOn(t.id);
         else if ((sub === 'done') !== t.done) toggleTask(t.id);
         return ls();
       }

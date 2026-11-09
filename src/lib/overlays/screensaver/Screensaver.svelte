@@ -8,6 +8,11 @@
 
   let active: SaverRequest | null = null;
   let canvas: HTMLCanvasElement;
+  /** The pane the saver covers, and its box on screen (the whole window if it has no pane). */
+  let paneEl: HTMLElement | null = null;
+  let box = { left: 0, top: 0, width: 0, height: 0 };
+  let watch: ResizeObserver | null = null;
+  let gone: ReturnType<typeof setInterval> | undefined;
   let running: Running | null = null;
   let startedAt = 0;
   let startPoint: { x: number; y: number } | null = null;
@@ -21,15 +26,30 @@
     show(req);
   });
 
+  function measure() {
+    if (paneEl?.isConnected) {
+      const r = paneEl.getBoundingClientRect();
+      box = { left: r.left, top: r.top, width: r.width, height: r.height };
+    } else box = { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
+  }
+
   async function show(req: SaverRequest) {
     stopSaver();
+    paneEl = req.paneId ? document.querySelector<HTMLElement>(`[data-pane-id="${CSS.escape(req.paneId)}"]`) : null;
+    measure();
     active = req;
     startedAt = Date.now();
     startPoint = null;
     await tick();
     if (!canvas) return;
-    running = START[req.id](canvas, readPalette(document.documentElement), reduced);
+    running = START[req.id](canvas, readPalette(document.documentElement), reduced, box.width, box.height);
     typeOut(req.message ?? []);
+    // follow the pane as it resizes; end if it closes
+    if (paneEl && typeof ResizeObserver !== 'undefined') {
+      watch = new ResizeObserver(onResize);
+      watch.observe(paneEl);
+    }
+    gone = setInterval(() => paneEl && !paneEl.isConnected && exit(), 500);
   }
 
   /** The hack message, one character at a time. */
@@ -55,6 +75,9 @@
 
   function stopSaver() {
     if (typer) clearInterval(typer);
+    if (gone) clearInterval(gone);
+    watch?.disconnect();
+    watch = null;
     running?.stop();
     running = null;
   }
@@ -85,7 +108,9 @@
   }
 
   function onResize() {
-    running?.resize(window.innerWidth, window.innerHeight);
+    if (!active) return;
+    measure();
+    running?.resize(box.width, box.height);
   }
 
   // Follow the theme while running.
@@ -120,7 +145,14 @@
 </script>
 
 {#if active}
-  <div class="saver" transition:fade={{ duration: reduced ? 0 : 400 }} role="presentation" aria-label="Screensaver: press any key to return">
+  <div
+    class="saver"
+    class:in-pane={!!paneEl}
+    style="left:{box.left}px;top:{box.top}px;width:{box.width}px;height:{box.height}px;container-type:size"
+    transition:fade={{ duration: reduced ? 0 : 400 }}
+    role="presentation"
+    aria-label="Screensaver: press any key to return"
+  >
     <canvas bind:this={canvas} />
     {#if typed.length}
       <div class="message" aria-live="polite">
@@ -136,10 +168,13 @@
 <style>
   .saver {
     position: fixed;
-    inset: 0;
     z-index: 400;
+    overflow: hidden;
     background: var(--bg1);
     cursor: none;
+  }
+  .saver.in-pane {
+    border-radius: 6px;
   }
   canvas {
     position: absolute;
@@ -151,14 +186,17 @@
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    width: min(640px, calc(100vw - 32px));
+    width: min(640px, calc(100% - 24px));
+    max-height: calc(100% - 24px);
+    overflow: hidden;
     padding: 18px 22px;
     border: 1px solid color-mix(in srgb, var(--hl1) 55%, transparent);
     border-radius: 8px;
     background: color-mix(in srgb, var(--bg1) 82%, transparent);
     color: var(--hl1);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 14px;
+    /* cq units: sized to the pane (container-type is set inline on .saver) */
+    font-size: clamp(11px, 3.2cqw, 14px);
     line-height: 1.6;
     box-shadow: 0 0 40px -10px var(--hl1);
   }
@@ -169,7 +207,7 @@
   }
   .message p.big {
     margin-top: 6px;
-    font-size: 22px;
+    font-size: clamp(15px, 5cqw, 22px);
     font-weight: 700;
     letter-spacing: 0.06em;
     color: var(--t2);

@@ -42,7 +42,12 @@ export interface TabEntry {
   id: string;
   name: string;
   data?: TabData;
+  /** The space this tab is pinned to (filters its tasks, notes, reminders and theme). Unset = all. */
+  space?: string;
 }
+
+/** A tab entry without its stored layout, keeping its name and space. */
+const bare = (t: TabEntry): TabEntry => (t.space ? { id: t.id, name: t.name, space: t.space } : { id: t.id, name: t.name });
 
 export interface WorkspaceState extends TabData {
   tabs: TabEntry[];
@@ -159,11 +164,14 @@ function initialState(): WorkspaceState {
     // older saves have no tabs: they become the single tab
     const saved = Array.isArray(stored.tabs) ? stored.tabs.filter((t) => t && typeof t.id === 'string' && typeof t.name === 'string') : [];
     if (!saved.length || !stored.active) return withTab(active);
-    const tabs: TabEntry[] = saved.map((t) => ({ id: t.id, name: t.name, data: t.data && isValidData(t.data) ? hydrateData(t.data) : undefined }));
+    const tabs: TabEntry[] = saved.map((t) => ({
+      ...bare({ id: t.id, name: t.name, space: typeof t.space === 'string' ? t.space : undefined }),
+      data: t.data && isValidData(t.data) ? hydrateData(t.data) : undefined,
+    }));
     const activeId = tabs.some((t) => t.id === stored.active) ? (stored.active as string) : tabs[0].id;
     const idx = tabs.findIndex((t) => t.id === activeId);
     const current = tabs[idx];
-    tabs[idx] = { id: current.id, name: current.name };
+    tabs[idx] = bare(current);
     return { ...active, tabs, active: activeId };
   }
   return defaultState();
@@ -344,8 +352,8 @@ export function switchTab(id: string) {
   workspace.update((s) => {
     if (s.active === id || !s.tabs.some((t) => t.id === id)) return s;
     const tabs = s.tabs.map((t) => {
-      if (t.id === s.active) return { id: t.id, name: t.name, data: snapshot(s) };
-      if (t.id === id) return { id: t.id, name: t.name };
+      if (t.id === s.active) return { ...bare(t), data: snapshot(s) };
+      if (t.id === id) return bare(t);
       return t;
     });
     const data = s.tabs.find((t) => t.id === id)?.data;
@@ -359,7 +367,7 @@ export function newTab(name?: string): string {
   const id = uid('t');
   const pane = leaf('terminal', { startup: ['motd'] });
   workspace.update((s) => {
-    const tabs: TabEntry[] = s.tabs.map((t) => (t.id === s.active ? { id: t.id, name: t.name, data: snapshot(s) } : t));
+    const tabs: TabEntry[] = s.tabs.map((t) => (t.id === s.active ? { ...bare(t), data: snapshot(s) } : t));
     const at = tabs.findIndex((t) => t.id === s.active) + 1;
     tabs.splice(at, 0, { id, name: name?.trim() || `tab ${s.tabs.length + 1}` });
     const data: TabData = { root: pane, template: null, focused: pane.id, maximized: null };
@@ -375,6 +383,14 @@ export function stepTab(delta: 1 | -1) {
   const i = s.tabs.findIndex((t) => t.id === s.active);
   const next = s.tabs[(i + delta + s.tabs.length) % s.tabs.length];
   switchTab(next.id);
+}
+
+/** Pin a tab to a space ('all' or a space id). */
+export function setTabSpace(id: string, space: string) {
+  workspace.update((s) => ({
+    ...s,
+    tabs: s.tabs.map((t) => (t.id === id ? { ...t, space: space === 'all' ? undefined : space } : t)),
+  }));
 }
 
 export function renameTab(id: string, name: string) {

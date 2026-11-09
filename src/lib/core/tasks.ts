@@ -204,6 +204,23 @@ export function addTaskLines(text: string, opts: { projectId?: string; parentId?
   return added.map((id) => now.find((t) => t.id === id)!).filter(Boolean);
 }
 
+/**
+ * Move a task to another space, with its sub-tasks. A sub-task moved on its
+ * own leaves its parent and becomes a top-level task there.
+ */
+export function moveTask(id: string, projectId: string) {
+  const list = get(tasks);
+  const task = list.find((t) => t.id === id);
+  if (!task || !get(projects).some((p) => p.id === projectId)) return;
+  tasks.update((all) =>
+    all.map((t) => {
+      if (t.id === id) return { ...t, projectId, parentId: undefined };
+      if (t.parentId === id) return { ...t, projectId };
+      return t;
+    }),
+  );
+}
+
 export function toggleTask(id: string) {
   tasks.update((list) =>
     list.map((t) => (t.id === id ? { ...t, done: !t.done, doneAt: !t.done ? Date.now() : undefined } : t)),

@@ -5,9 +5,10 @@
   import { createNote, deleteNote, moveNote, notes, noteSpace, reorderNotes, sortNotes, timeAgo, titleOf, togglePin, updateNote } from './store';
   import { activeSpace, spaceForNew, visibleIn } from '../../core/spaces';
   import DatePicker from '../../ui/DatePicker.svelte';
-  import { dateToken, openMention, resolveForHtml, type MentionKind } from '../../core/mentions';
+  import { focusOn } from '../pomodoro/engine';
+  import { dateToken, openMention, relabel, resolveForHtml, splitLabel, type MentionKind } from '../../core/mentions';
   import { friendlyDate, parseDate, relativeDay } from '../../core/dates';
-  import { projectOf, projects, setActiveTask, tasks, toggleTask as toggleTaskDone } from '../../core/tasks';
+  import { projectOf, projects, tasks, toggleTask as toggleTaskDone } from '../../core/tasks';
 
   export let paneId: string;
   export let focused = false;
@@ -32,6 +33,7 @@
     setCursor(pos: number): void;
     insert(text: string, at?: number): void;
     coordsAt(pos?: number): { left: number; top: number; bottom: number } | null;
+    setText(text: string): void;
   }
   // CodeMirror loads with the first notes pane, not with the page.
   let LiveEditor: typeof import('./editor/LiveEditor.svelte').default | null = null;
@@ -282,9 +284,36 @@
 
   function cardFocus() {
     if (!cardTask) return;
-    setActiveTask(cardTask.id);
+    focusOn(cardTask.id);
     card = null;
   }
+
+  /* rename: the link's own label ([@task: #3-My label]); empty = the task's name */
+  let renaming = false;
+  let renameText = '';
+
+  function startCardRename() {
+    if (!card || card.kind === 'date') return;
+    renameText = splitLabel(card.kind, card.ref).label ?? '';
+    renaming = true;
+    card = { ...card, pinned: true };
+    tick().then(() => cardEl?.querySelector<HTMLInputElement>('input.mc-rename')?.select());
+  }
+
+  function finishCardRename() {
+    if (!card || card.kind === 'date') return;
+    const next = relabel(draft, card.kind, card.ref, renameText);
+    if (editor) editor.setText(next);
+    else {
+      draft = next;
+      onEdit();
+    }
+    renaming = false;
+    card = null;
+  }
+
+  // a different chip (or none) ends any rename in progress
+  $: if (!card) renaming = false;
 
   async function cardCopy() {
     if (!card) return;
@@ -568,6 +597,7 @@
             <button on:click={cardOpen}>open task</button>
             <button on:click={cardToggle}>{cardTask.done ? 'mark active' : 'mark done'}</button>
             {#if !cardTask.done}<button on:click={cardFocus}>focus</button>{/if}
+            <button on:click={startCardRename} title="Show your own label instead of the task name">rename</button>
           </div>
         {:else}
           <div class="mc-head">task {card.ref} no longer exists</div>
@@ -586,9 +616,27 @@
         {/if}
       {:else if cardNote}
         <div class="mc-head">{titleOf(cardNote)}</div>
-        <div class="mc-actions"><button on:click={cardOpen}>open note</button></div>
+        <div class="mc-actions">
+          <button on:click={cardOpen}>open note</button>
+          <button on:click={startCardRename} title="Show your own label instead of the note title">rename</button>
+        </div>
       {:else}
         <div class="mc-head">note "{card.ref}" not found</div>
+      {/if}
+      {#if renaming}
+        <input
+          class="mc-rename"
+          bind:value={renameText}
+          placeholder={card.kind === 'task' ? 'label (empty = task name)' : 'label (empty = note title)'}
+          maxlength="80"
+          aria-label="Link label"
+          on:keydown={(e) => {
+            if (e.key === 'Enter') finishCardRename();
+            if (e.key === 'Escape') renaming = false;
+            e.stopPropagation();
+          }}
+        />
+        <div class="mc-meta">Enter to save. Renames every link to it in this note; the link still opens the {card.kind}.</div>
       {/if}
     </div>
   {/if}
@@ -934,6 +982,25 @@
     max-width: 100%;
     border-radius: 6px;
   }
+  /* accordions (<details>) in the reading view */
+  .md :global(details) {
+    margin: 0.6em 0;
+    padding: 4px 10px;
+    border-left: 2px solid var(--hl1);
+    border-radius: 0 6px 6px 0;
+    background: color-mix(in srgb, var(--bg2) 22%, transparent);
+  }
+  .md :global(summary) {
+    cursor: pointer;
+    font-weight: 700;
+    color: var(--t2);
+  }
+  .md :global(summary::marker) {
+    color: var(--hl1);
+  }
+  .md :global(details[open] > summary) {
+    margin-bottom: 0.4em;
+  }
   .md :global(strong) {
     color: var(--t2);
     font-weight: 700;
@@ -1117,6 +1184,17 @@
   .badge.done {
     border-color: var(--t1);
     color: var(--t1);
+  }
+  .mc-rename {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid var(--hl1);
+    border-radius: 6px;
+    background: var(--bg1);
+    color: var(--t2);
+    font: inherit;
+    font-size: 12px;
+    outline: none;
   }
   .mc-actions {
     display: flex;

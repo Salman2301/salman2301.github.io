@@ -3,10 +3,11 @@
   import { cycleTheme } from './lib/core/theme';
   import { overlays } from './lib/core/registry';
   import { openOverlay, templatePickerOpen } from './lib/core/ui';
-  import { toggleRadio } from './lib/widgets/radio/player';
+  import { stepStation, toggleRadio } from './lib/widgets/radio/player';
   import { onMount } from 'svelte';
   import { startReminders } from './lib/core/reminders';
   import { startScreensaver } from './lib/core/screensaver';
+  import { startScreenTime } from './lib/core/screentime';
   import {
     closePane,
     focusNeighbour,
@@ -51,6 +52,14 @@
       case 'KeyP':
         handled();
         toggleRadio();
+        return;
+      case 'Period':
+        handled();
+        stepStation(1);
+        return;
+      case 'Comma':
+        handled();
+        stepStation(-1);
         return;
       case 'Slash':
         handled();
@@ -111,7 +120,10 @@
     }
   }
 
-  onMount(startReminders);
+  onMount(() => {
+    startReminders();
+    startScreenTime();
+  });
 </script>
 
 <svelte:window on:keydown|capture={onKeyDown} />

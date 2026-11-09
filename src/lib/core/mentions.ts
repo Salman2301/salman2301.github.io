@@ -54,6 +54,27 @@ export interface Resolved {
   done?: boolean;
 }
 
+/**
+ * A link's target and its own label, if it has one:
+ *   "#3"                -> #3
+ *   "#3-Gift for mum"   -> #3, shown as "Gift for mum"
+ *   "#3 | Gift for mum" -> the same
+ *   "Trip plan | plan"  -> the note "Trip plan", shown as "plan"
+ * Notes only take "|", since titles often contain dashes.
+ */
+export function splitLabel(kind: MentionKind, ref: string): { target: string; label?: string } {
+  const pipe = ref.indexOf('|');
+  if (pipe >= 0) {
+    const label = ref.slice(pipe + 1).trim();
+    return { target: ref.slice(0, pipe).trim(), label: label || undefined };
+  }
+  if (kind === 'task') {
+    const m = /^#?(\d+)\s*-\s*(.+)$/.exec(ref.trim());
+    if (m) return { target: `#${m[1]}`, label: m[2].trim() };
+  }
+  return { target: ref.trim() };
+}
+
 function findTask(ref: string, legacy: boolean, list: Task[]): Task | undefined {
   if (legacy) return list.find((t) => t.id === ref);
   const no = Number(ref.replace(/^#/, ''));
@@ -70,14 +91,31 @@ function resolve(m: Match, noteList: Note[], taskList: Task[]): Resolved {
     const ok = !!parseDate(m.ref);
     return { kind: 'date', id: ok ? m.ref : '', label: ok ? formatDate(m.ref) : m.ref, missing: !ok };
   }
+  const { target, label } = m.legacy ? { target: m.ref, label: undefined } : splitLabel(m.kind, m.ref);
   if (m.kind === 'note') {
-    const n = findNote(m.ref, noteList);
-    return n ? { kind: 'note', id: n.id, label: titleOf(n), missing: false } : { kind: 'note', id: '', label: m.legacy ? 'deleted note' : m.ref, missing: true };
+    const n = findNote(target, noteList);
+    return n
+      ? { kind: 'note', id: n.id, label: label ?? titleOf(n), missing: false }
+      : { kind: 'note', id: '', label: label ?? (m.legacy ? 'deleted note' : target), missing: true };
   }
-  const t = findTask(m.ref, m.legacy, taskList);
+  const t = findTask(target, m.legacy, taskList);
   return t
-    ? { kind: 'task', id: t.id, label: `#${t.no} ${t.text}`, missing: false, done: t.done }
-    : { kind: 'task', id: '', label: m.legacy ? 'deleted task' : `${m.ref} (deleted)`, missing: true };
+    ? { kind: 'task', id: t.id, label: label ?? `#${t.no} ${t.text}`, missing: false, done: t.done }
+    : { kind: 'task', id: '', label: label ?? (m.legacy ? 'deleted task' : `${target} (deleted)`), missing: true };
+}
+
+/**
+ * Give every link to the same target (with any label) in `src` a new label,
+ * or none. Used by "rename" on a chip: the text changes, the link does not.
+ */
+export function relabel(src: string, kind: 'task' | 'note', ref: string, label: string): string {
+  const { target } = splitLabel(kind, ref);
+  const clean = label.replace(/[[\]\n|]/g, ' ').trim();
+  return src.replace(TOKEN, (whole, k: string, r: string) => {
+    if (k !== kind || splitLabel(kind, r).target.toLowerCase() !== target.toLowerCase()) return whole;
+    if (!clean) return `[@${kind}: ${target}]`;
+    return kind === 'task' ? `[@task: ${target}-${clean}]` : `[@note: ${target} | ${clean}]`;
+  });
 }
 
 /** The text to write for a task, a note or a date. */
