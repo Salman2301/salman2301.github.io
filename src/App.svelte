@@ -3,6 +3,7 @@
   import { cycleTheme } from './lib/core/theme';
   import { overlays } from './lib/core/registry';
   import { templatePickerOpen } from './lib/core/ui';
+  import { toggleRadio } from './lib/widgets/radio/player';
   import {
     closePane,
     focusNeighbour,
@@ -43,6 +44,10 @@
       case 'KeyT':
         handled();
         templatePickerOpen.update((v) => !v);
+        return;
+      case 'KeyP':
+        handled();
+        toggleRadio();
         return;
       case 'Backslash':
       case 'Enter':

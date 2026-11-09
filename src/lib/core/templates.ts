@@ -55,9 +55,9 @@ export const builtinTemplates: TemplateDef[] = [
   },
   {
     id: 'study',
-    title: 'Lofi Study',
-    description: 'Lofi stream, pomodoro and markdown notes.',
-    build: () => row([col([leaf('youtube'), leaf('pomodoro')], [0.6, 0.4]), leaf('notes')], [0.55, 0.45]),
+    title: 'Study Radio',
+    description: 'Ambient radio, pomodoro and markdown notes.',
+    build: () => row([col([leaf('radio'), leaf('pomodoro')], [0.6, 0.4]), leaf('notes')], [0.55, 0.45]),
   },
   {
     id: 'dev',
@@ -74,8 +74,8 @@ export const builtinTemplates: TemplateDef[] = [
   {
     id: 'music',
     title: 'Music Room',
-    description: 'Spotify and YouTube Music side by side, with a clock.',
-    build: () => row([col([leaf('spotify'), leaf('ytmusic')]), col([leaf('clock'), leaf('terminal')], [0.4, 0.6])], [0.6, 0.4]),
+    description: 'Spotify and a free radio station side by side, with a clock.',
+    build: () => row([col([leaf('spotify'), leaf('radio')]), col([leaf('clock'), leaf('terminal')], [0.4, 0.6])], [0.6, 0.4]),
   },
   {
     id: 'dashboard',
@@ -83,7 +83,7 @@ export const builtinTemplates: TemplateDef[] = [
     description: 'Clock, timers, notes, tasks and music in one grid.',
     build: () =>
       col(
-        [row([leaf('clock'), leaf('pomodoro'), leaf('timer')]), row([leaf('notes'), leaf('todo'), leaf('ytmusic')])],
+        [row([leaf('clock'), leaf('pomodoro'), leaf('timer')]), row([leaf('notes'), leaf('todo'), leaf('radio')])],
         [0.42, 0.58],
       ),
   },

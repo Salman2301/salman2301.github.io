@@ -3,7 +3,7 @@ import { openWidget } from '../core/workspace';
 
 const command: CommandDef = {
   name: 'embed',
-  description: 'open a web page or a YouTube video in a new pane',
+  description: 'open a web page in a new pane',
   usage: 'embed <url>',
   group: 'workspace',
   run: (ctx) => {

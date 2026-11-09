@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Config } from '../../core/types';
-  import MediaPlayer from '../youtube/MediaPlayer.svelte';
+  import MediaPlayer from '../media/MediaPlayer.svelte';
   import { SPOTIFY_DEFAULT, SPOTIFY_PRESETS } from './presets';
   import { fitSpotify, SPOTIFY } from './spotify';
 

@@ -23,6 +23,16 @@ export function watchPalette(el: Element, cb: (p: Palette) => void): () => void 
 }
 
 /**
+ * Blend two #rrggbb colours: t = 0 gives a, t = 1 gives b. Palette values
+ * are always hex, so games can derive extra shades without hardcoding any.
+ */
+export function mix(a: string, b: string, t: number): string {
+  const ch = (h: string, i: number) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  const out = [0, 1, 2].map((i) => Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t));
+  return `#${out.map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
  * Fixed-timestep loop (deterministic at any refresh rate). While paused it
  * keeps drawing but does not advance, and the clock resets so nothing jumps
  * after resuming.

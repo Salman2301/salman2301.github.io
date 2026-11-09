@@ -14,14 +14,6 @@
 
   $: currentKey = current ? itemKey(current) : '';
 
-  /** 90 -> "1:30", 3723 -> "1:02:03". */
-  function clock(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = String(seconds % 60).padStart(2, '0');
-    return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
-  }
-
   function rows(): HTMLElement[] {
     return Array.from(panel?.querySelectorAll<HTMLElement>('[data-row]') ?? []);
   }
@@ -94,7 +86,7 @@
         <li class="recent-row">
           <button class="pick" class:on={key === currentKey} data-row data-key={key} on:click={() => dispatch('pick', r)}>
             <span class="name">{labelOf(r)}</span>
-            <span class="meta">{r.kind}{r.list ? ' in a playlist' : ''}{r.start ? ` · from ${clock(r.start)}` : ''}</span>
+            <span class="meta">{r.kind}</span>
           </button>
           <button class="forget" title="Remove from recent" aria-label="Remove {labelOf(r)} from recent" on:click={() => dispatch('forget', r)}>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
@@ -121,7 +113,7 @@
     border-radius: 8px;
     border: 1px solid var(--bg2);
     background: var(--bg1);
-    box-shadow: 0 16px 40px -12px color-mix(in srgb, var(--bg1) 20%, #000);
+    box-shadow: 0 16px 40px -12px color-mix(in srgb, var(--bg2) 60%, transparent);
     color: var(--t2);
     overflow: hidden;
   }

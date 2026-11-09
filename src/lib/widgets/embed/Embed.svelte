@@ -11,25 +11,7 @@
   let frameKey = 0;
 
   $: url = typeof config.url === 'string' ? config.url : '';
-  $: src = toEmbedUrl(url);
-
-  /** Turn a normal YouTube link into its embeddable form; anything else is used as-is. */
-  function toEmbedUrl(raw: string): string {
-    if (!raw) return '';
-    try {
-      const u = new URL(raw);
-      const host = u.hostname.replace(/^www\./, '');
-      let id = '';
-      if (host === 'youtu.be') id = u.pathname.slice(1);
-      else if (host === 'youtube.com' || host === 'm.youtube.com') {
-        const m = u.pathname.match(/^\/(?:embed|shorts)\/([\w-]+)/);
-        id = u.searchParams.get('v') ?? (m ? m[1] : '');
-      }
-      return id ? `https://www.youtube.com/embed/${id}` : u.href;
-    } catch {
-      return '';
-    }
-  }
+  $: src = url;
 
   function go() {
     let v = draft.trim();
@@ -69,7 +51,7 @@
   {:else}
     <div class="empty">
       <p>Embed a web page or a video in this pane.</p>
-      <p class="muted">YouTube links play inline. Or type <code>embed &lt;url&gt;</code> in the terminal.</p>
+      <p class="muted">Or type <code>embed &lt;url&gt;</code> in the terminal.</p>
     </div>
   {/if}
 </div>

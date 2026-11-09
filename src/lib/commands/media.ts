@@ -1,11 +1,8 @@
 import { get } from 'svelte/store';
 import type { CommandContext, CommandDef } from '../core/types';
 import { openWidget } from '../core/workspace';
-import { asItem, labelOf, resolveInput, type MediaItem, type MediaSource, type Preset } from '../widgets/youtube/media';
-import { LOFI, YOUTUBE_PRESETS } from '../widgets/youtube/presets';
-import { recentFor, recordPlay } from '../widgets/youtube/recent';
-import { YOUTUBE } from '../widgets/youtube/youtube';
-import { YTMUSIC, YTMUSIC_PRESETS } from '../widgets/ytmusic/presets';
+import { asItem, labelOf, resolveInput, type MediaItem, type MediaSource, type Preset } from '../widgets/media/media';
+import { recentFor, recordPlay } from '../widgets/media/recent';
 import { SPOTIFY_PRESETS } from '../widgets/spotify/presets';
 import { SPOTIFY } from '../widgets/spotify/spotify';
 
@@ -61,34 +58,12 @@ function mediaCommand(def: {
 
 const commands: CommandDef[] = [
   mediaCommand({
-    name: 'youtube',
-    aliases: ['yt'],
-    description: 'play a YouTube video, live stream or playlist in a pane',
-    source: YOUTUBE,
-    presets: YOUTUBE_PRESETS,
-    example: 'https://youtu.be/jfKfPfyJRdk',
-  }),
-  mediaCommand({
-    name: 'ytmusic',
-    aliases: ['ytm'],
-    description: 'play YouTube Music songs, albums or playlists (via the YouTube player)',
-    source: YTMUSIC,
-    presets: YTMUSIC_PRESETS,
-    example: 'https://music.youtube.com/playlist?list=...',
-  }),
-  mediaCommand({
     name: 'spotify',
     description: 'play a Spotify playlist, album, track or podcast in a pane',
     source: SPOTIFY,
     presets: SPOTIFY_PRESETS,
     example: 'https://open.spotify.com/playlist/...',
   }),
-  {
-    name: 'lofi',
-    description: 'play the 24/7 lofi hip hop stream in a YouTube pane',
-    group: 'widgets',
-    run: (ctx) => play(ctx, YOUTUBE, YOUTUBE_PRESETS, LOFI),
-  },
 ];
 
 export default commands;

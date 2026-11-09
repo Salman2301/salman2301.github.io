@@ -19,7 +19,7 @@ export type Config = Record<string, unknown>;
 
 /**
  * A widget is anything that can live in a pane: the terminal, pomodoro,
- * notes, a YouTube player, the arcade, ...
+ * notes, a radio player, the arcade, ...
  *
  * The widget component receives exactly these props:
  *   paneId:       string                      id of the pane it lives in
