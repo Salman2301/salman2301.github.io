@@ -1,6 +1,6 @@
 import type { GameApi } from '../../core/types';
 import { clamp, rand, type Palette } from '../kit';
-import { COLS, levelAt, parse, type Cell, type Grid } from './levels';
+import { COLS, MAX_ROWS, levelAt, parse, type Cell, type Grid } from './levels';
 
 /**
  * Brick breaker rules and physics, independent of the DOM. Bricks.svelte
@@ -8,16 +8,24 @@ import { COLS, levelAt, parse, type Cell, type Grid } from './levels';
  */
 
 export const VW = 192;
-export const VH = 144;
+/**
+ * The field is always VW wide; its height follows the pane's shape within
+ * these limits, so tall panes get a taller field instead of empty bands.
+ * The extra height goes between the bricks and the paddle.
+ */
+export const MIN_VH = 144;
+export const MAX_VH = 256;
 /** Ceiling of the playfield; the HUD lives above it. */
 export const TOP = 11;
 export const BW = 12;
 export const BH = 6;
 export const GRID_X = (VW - COLS * BW) / 2;
 export const GRID_Y = TOP + 9;
-export const PADDLE_Y = VH - 10;
+export const GRID_BOTTOM = GRID_Y + MAX_ROWS * BH;
 export const PADDLE_H = 3;
 export const BALL_R = 2;
+/** Gap between the paddle and the bottom edge. */
+const PADDLE_GAP = 10;
 
 const PADDLE_W = 28;
 const WIDE_W = 42;
@@ -119,6 +127,9 @@ export class BricksGame {
   shake = 0;
   clearT = 0;
   over = false;
+  /** Current field height in virtual px (see MIN_VH). */
+  vh = MIN_VH;
+  paddleY = MIN_VH - PADDLE_GAP;
   /** Seconds of play in this life; the ball speeds up with it. */
   private playTime = 0;
   private laserCooldown = 0;
@@ -127,9 +138,33 @@ export class BricksGame {
     this.load(0);
   }
 
+  /**
+   * Change the field height. Everything below the bricks is stretched to
+   * the new paddle line, so nothing ends up under the paddle or off screen.
+   */
+  resize(vh: number) {
+    vh = Math.round(clamp(vh, MIN_VH, MAX_VH));
+    if (vh === this.vh) return;
+    const oldY = this.paddleY;
+    this.vh = vh;
+    this.paddleY = vh - PADDLE_GAP;
+    const k = (this.paddleY - GRID_BOTTOM) / (oldY - GRID_BOTTOM);
+    const remap = (y: number) => (y > GRID_BOTTOM ? GRID_BOTTOM + (y - GRID_BOTTOM) * k : y);
+    for (const b of this.balls) {
+      b.y = b.stuck ? this.paddleY - BALL_R : Math.min(remap(b.y), this.paddleY - BALL_R);
+      b.trail.length = 0;
+    }
+    for (const c of this.capsules) c.y = remap(c.y);
+    for (const bolt of this.bolts) bolt.y = remap(bolt.y);
+    this.particles = [];
+    this.floaters = [];
+  }
+
   get speed(): number {
     const base = 92 + Math.min(this.level, 10) * 5;
-    return (base + Math.min(70, this.playTime * 1.2)) * (this.effects.slow ? 0.65 : 1);
+    // a taller field is a little faster so the pace holds, while still leaving more time to react
+    const field = Math.sqrt(this.vh / MIN_VH);
+    return (base + Math.min(70, this.playTime * 1.2)) * field * (this.effects.slow ? 0.65 : 1);
   }
 
   get serving(): boolean {
@@ -152,7 +187,7 @@ export class BricksGame {
   }
 
   private serve() {
-    this.balls = [this.newBall(this.paddle.x, PADDLE_Y - BALL_R, 0, -1, true)];
+    this.balls = [this.newBall(this.paddle.x, this.paddleY - BALL_R, 0, -1, true)];
   }
 
   private newBall(x: number, y: number, dx: number, dy: number, stuck = false): Ball {
@@ -189,12 +224,12 @@ export class BricksGame {
   update(dt: number, input: BricksInput) {
     if (this.over) return;
     this.tickEffects(dt);
+    this.movePaddle(dt, input);
     if (this.clearT > 0) {
       this.clearT -= dt;
       if (this.clearT <= 0) this.load(this.level + 1);
       return;
     }
-    this.movePaddle(dt, input);
     if (!this.serving) this.playTime += dt;
     for (const b of this.balls) this.updateBall(b, dt);
     this.balls = this.balls.filter((b) => !b.lost);
@@ -253,7 +288,7 @@ export class BricksGame {
     if (b.stuck) {
       b.offset = clamp(b.offset, -this.paddle.w / 2 + 2, this.paddle.w / 2 - 2);
       b.x = this.paddle.x + b.offset;
-      b.y = PADDLE_Y - BALL_R;
+      b.y = this.paddleY - BALL_R;
       b.trail.length = 0;
       if (b.release > 0 && (b.release -= dt) <= 0) this.releaseBall(b);
       return;
@@ -279,7 +314,7 @@ export class BricksGame {
       if (hit) {
         b.x -= b.dx * s;
         b.dx = -b.dx;
-        this.hitBrick(hit.r, hit.c, true);
+        this.ballHit(b, hit.r, hit.c);
       }
     }
     b.y += b.dy * s;
@@ -291,11 +326,17 @@ export class BricksGame {
       if (hit) {
         b.y -= b.dy * s;
         b.dy = -b.dy;
-        this.hitBrick(hit.r, hit.c, true);
+        this.ballHit(b, hit.r, hit.c);
       } else if (b.dy > 0 && this.onPaddle(b)) this.paddleBounce(b);
-      else if (b.y - BALL_R > VH) b.lost = true;
+      else if (b.y - BALL_R > this.vh) b.lost = true;
     }
     this.keepAngle(b);
+  }
+
+  /** Steel nudges the angle a little, so no bounce loop between steel and walls lasts forever. */
+  private ballHit(b: Ball, r: number, c: number) {
+    if (this.cells[r][c]?.steel) turn(b, rand(-0.07, 0.07));
+    this.hitBrick(r, c, true);
   }
 
   /** The brick overlapping the ball's box that is closest to its centre. */
@@ -320,12 +361,12 @@ export class BricksGame {
 
   private onPaddle(b: Ball): boolean {
     const p = this.paddle;
-    return b.y + BALL_R >= PADDLE_Y && b.y - BALL_R <= PADDLE_Y + PADDLE_H && Math.abs(b.x - p.x) <= p.w / 2 + BALL_R;
+    return b.y + BALL_R >= this.paddleY && b.y - BALL_R <= this.paddleY + PADDLE_H && Math.abs(b.x - p.x) <= p.w / 2 + BALL_R;
   }
 
   private paddleBounce(b: Ball) {
     const p = this.paddle;
-    b.y = PADDLE_Y - BALL_R;
+    b.y = this.paddleY - BALL_R;
     this.combo = 0;
     this.hooks.sfx('blip');
     if (this.effects.sticky) {
@@ -350,6 +391,7 @@ export class BricksGame {
     const y = GRID_Y + (r + 0.5) * BH;
     if (cell.steel) {
       this.burst(x, y, 3, 't1');
+      if (byBall) this.hooks.sfx('blip');
       return;
     }
     const color = brickColor(cell);
@@ -378,19 +420,19 @@ export class BricksGame {
     const p = this.paddle;
     for (const cap of this.capsules) {
       cap.y += CAPSULE_SPEED * dt;
-      const caught = cap.y + 3 >= PADDLE_Y && cap.y - 3 <= PADDLE_Y + PADDLE_H && Math.abs(cap.x - p.x) <= p.w / 2 + 5;
+      const caught = cap.y + 3 >= this.paddleY && cap.y - 3 <= this.paddleY + PADDLE_H && Math.abs(cap.x - p.x) <= p.w / 2 + 5;
       if (caught) {
         this.apply(cap.kind);
-        cap.y = VH + 99;
+        cap.y = this.vh + 99;
       }
     }
-    this.capsules = this.capsules.filter((c) => c.y < VH + 6);
+    this.capsules = this.capsules.filter((c) => c.y < this.vh + 6);
   }
 
   private apply(kind: PowerKind) {
     const def = POWERS[kind];
     this.hooks.sfx('score');
-    this.floaters.push({ x: this.paddle.x, y: PADDLE_Y - 6, text: def.name, life: 1.2 });
+    this.floaters.push({ x: this.paddle.x, y: this.paddleY - 6, text: def.name, life: 1.2 });
     if (kind === 'life') this.lives = Math.min(MAX_LIVES, this.lives + 1);
     else if (kind === 'multi') this.split();
     else this.effects[kind] = def.duration;
@@ -402,11 +444,10 @@ export class BricksGame {
     const extra: Ball[] = [];
     for (const b of this.balls) {
       if (b.stuck) continue;
-      for (const turn of [-0.35, 0.35]) {
+      for (const angle of [-0.35, 0.35]) {
         if (this.balls.length + extra.length >= MAX_BALLS) break;
-        const cos = Math.cos(turn);
-        const sin = Math.sin(turn);
-        const nb = this.newBall(b.x, b.y, b.dx * cos - b.dy * sin, b.dx * sin + b.dy * cos);
+        const nb = this.newBall(b.x, b.y, b.dx, b.dy);
+        turn(nb, angle);
         this.keepAngle(nb);
         extra.push(nb);
       }
@@ -441,7 +482,7 @@ export class BricksGame {
   private fireLaser() {
     if (!this.effects.laser || this.laserCooldown > 0 || this.clearT > 0) return;
     const p = this.paddle;
-    this.bolts.push({ x: p.x - p.w / 2 + 2, y: PADDLE_Y - 1 }, { x: p.x + p.w / 2 - 2, y: PADDLE_Y - 1 });
+    this.bolts.push({ x: p.x - p.w / 2 + 2, y: this.paddleY - 1 }, { x: p.x + p.w / 2 - 2, y: this.paddleY - 1 });
     this.laserCooldown = LASER_COOLDOWN;
     this.hooks.sfx('blip');
   }
@@ -486,4 +527,11 @@ export class BricksGame {
       this.particles.push({ x, y, vx: rand(-55, 55), vy: rand(-60, 15), life, max: life, color });
     }
   }
+}
+
+/** Rotate a ball's direction by `angle` radians. */
+function turn(b: Ball, angle: number) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  [b.dx, b.dy] = [b.dx * cos - b.dy * sin, b.dx * sin + b.dy * cos];
 }
