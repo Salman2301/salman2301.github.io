@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import type { CommandDef } from '../core/types';
-import { cycleTheme, setTheme, setThemeMode, THEME_MODES, themeNames, type ThemeMode } from '../core/theme';
+import { chooseTheme, cycleThemeHere } from '../core/spaces';
+import { setThemeMode, THEME_MODES, themeNames, type ThemeMode } from '../core/theme';
 import { soundEnabled } from '../core/sound';
 import { commandHistory } from '../terminal/context';
 import Help from '../terminal/output/Help.svelte';
@@ -94,10 +95,10 @@ const commands: CommandDef[] = [
         return ctx.print(name === 'system' ? 'theme follows your system light / dark setting' : `theme mode: ${name}`, 'muted');
       }
       if (name === 'next' || name === 'random') {
-        const next = cycleTheme(name === 'random');
+        const next = cycleThemeHere(name === 'random');
         return ctx.print(`theme: ${next}`, 'muted');
       }
-      if (!setTheme(name)) ctx.print(`theme "${name}" not found. Type "theme" to list them.`, 'error');
+      if (!chooseTheme(name)) ctx.print(`theme "${name}" not found. Type "theme" to list them.`, 'error');
       else ctx.print(`theme: ${name}`, 'muted');
     },
   },

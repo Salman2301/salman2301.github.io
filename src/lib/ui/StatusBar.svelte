@@ -3,7 +3,8 @@
   import { getWidget } from '../core/registry';
   import { statusItems } from '../core/status';
   import { findTemplate } from '../core/templates';
-  import { cycleThemeMode, darkThemes, lightThemes, setTheme, themeMode, themeStore } from '../core/theme';
+  import { cycleThemeMode, darkThemes, lightThemes, themeMode, themeStore } from '../core/theme';
+  import { chooseTheme, currentSpace } from '../core/spaces';
   import { templatePickerOpen } from '../core/ui';
   import { focusPane, leaves, workspace } from '../core/workspace';
   import ClockPanel from './ClockPanel.svelte';
@@ -62,7 +63,12 @@
   </button>
   <label class="seg theme" title="Theme (or type: theme <name>)">
     <span class="theme-label">theme</span>
-    <select aria-label="Theme" value={$themeStore} on:change={(e) => setTheme(e.currentTarget.value)}>
+    <select
+      aria-label={$currentSpace ? `Theme for the space ${$currentSpace.name}` : 'Theme'}
+      title={$currentSpace ? `Sets the theme of the space ${$currentSpace.name}` : 'Theme'}
+      value={$themeStore}
+      on:change={(e) => chooseTheme(e.currentTarget.value)}
+    >
       <optgroup label="dark">{#each darkThemes as name}<option value={name}>{name}</option>{/each}</optgroup>
       <optgroup label="light">{#each lightThemes as name}<option value={name}>{name}</option>{/each}</optgroup>
     </select>
