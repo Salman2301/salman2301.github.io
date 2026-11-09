@@ -72,7 +72,8 @@ function osFromUserAgent(ua: string, touchPoints: number): string {
   if ((m = ua.match(/Android (\d+(?:\.\d+)?)/))) return `Android ${m[1]}`;
   if ((m = ua.match(/Windows NT (\d+\.\d+)/))) return WINDOWS[m[1]] ?? `Windows NT ${m[1]}`;
   if (/CrOS/.test(ua)) return 'ChromeOS';
-  if ((m = ua.match(/Mac OS X (\d+)[._](\d+)/))) return `macOS ${m[1]}.${m[2]}`;
+  // Browsers froze this at 10.15 years ago, so only older versions are worth showing.
+  if ((m = ua.match(/Mac OS X (\d+)[._](\d+)/))) return m[1] === '10' && +m[2] >= 15 ? 'macOS' : `macOS ${m[1]}.${m[2]}`;
   if (/Linux/.test(ua)) return 'Linux';
   return 'an unknown OS';
 }

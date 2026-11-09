@@ -13,6 +13,7 @@
 
   const SAMPLE: Record<Charset, string> = { katakana: 'ｱｲｳ', binary: '01', code: '{;}', hex: '0xF' };
   const IDLE_MS = 2500;
+  const RESUME_HINT = window.matchMedia('(hover: none)').matches ? 'paused · tap to resume' : 'paused · click to resume';
 
   let root: HTMLDivElement;
   let canvas: HTMLCanvasElement;
@@ -243,7 +244,7 @@
 
   {#if paused}
     <button class="badge" on:click={togglePause} title="Resume (space)">
-      <span class="badge-icon" aria-hidden="true" />{tiny ? 'paused' : 'paused · tap to resume'}
+      <span class="badge-icon" aria-hidden="true" />{tiny ? 'paused' : RESUME_HINT}
     </button>
   {/if}
 
@@ -558,6 +559,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
     pointer-events: none;
+  }
+
+  /*
+   * Stacked phone layout: the pane is only as tall as its content (the cell
+   * has a 72vh min-height), and an absolutely placed canvas has none. Fill the
+   * cell minus the pane header so the rain does not collapse to 0px.
+   */
+  @media (max-width: 720px) {
+    .rain {
+      min-height: max(150px, calc(72vh - 40px));
+    }
   }
 
   /* touch: the icon is always there, and everything is big enough to hit */

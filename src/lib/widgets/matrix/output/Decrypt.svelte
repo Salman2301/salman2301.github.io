@@ -7,16 +7,18 @@
   export let secret: string;
   export let seed = 1;
 
-  const ROWS = 4;
   // "0x0000  " + "xx " per byte + " " + one ascii char per byte
   const FIXED_COLS = 9;
   const COLS_PER_BYTE = 4;
 
+  // Like a real hex dump: 16, 8 or 4 bytes per row, whichever fits.
   let perRow = 8;
   function onWidth(width: number, fontPx: number) {
-    const cols = Math.floor(width / (fontPx * 0.6));
-    perRow = Math.max(4, Math.min(16, Math.floor((cols - FIXED_COLS) / COLS_PER_BYTE)));
+    const fits = Math.floor((Math.floor(width / (fontPx * 0.6)) - FIXED_COLS) / COLS_PER_BYTE);
+    perRow = fits >= 16 ? 16 : fits >= 8 ? 8 : 4;
   }
+  // Just enough rows to hold the secret, so a wide dump is not mostly zero padding.
+  $: rowCount = Math.max(2, Math.ceil(secret.length / perRow));
 
   interface Cell {
     hex: string;
@@ -34,21 +36,22 @@
     return (h ^ (h >>> 15)) >>> 0;
   }
 
-  const printable = (b: number) => (b > 0x20 && b < 0x7f ? String.fromCharCode(b) : '.');
+  const printable = (b: number) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.');
   const hex = (b: number) => b.toString(16).padStart(2, '0');
 
   function cell(s: DecryptState, line: number, col: number, index: number): Cell {
     const decrypting = s.reveal > 0;
     if (decrypting && hash(seed, index + 7919) / 2 ** 32 < s.reveal) {
+      // past the end of the secret is zero padding
       const b = index < secret.length ? secret.charCodeAt(index) & 0xff : 0;
-      return { hex: hex(b), ch: b ? printable(b) : '.', locked: true };
+      return { hex: hex(b), ch: printable(b), locked: index < secret.length };
     }
     // while scrolling a line keeps its bytes; once decrypting starts the rest flickers
     const b = hash(seed + line * 131 + col, decrypting ? s.frame : 0) & 0xff;
     return { hex: hex(b), ch: printable(b), locked: false };
   }
 
-  $: rows = Array.from({ length: ROWS }, (_, r) => {
+  $: rows = Array.from({ length: rowCount }, (_, r) => {
     const line = $state.line + r;
     return {
       offset: `0x${(line * perRow).toString(16).padStart(4, '0')}`,
@@ -57,23 +60,20 @@
   });
 </script>
 
-<div class="dump" class:stopped={$state.stopped} use:measureWidth={onWidth} aria-label="decrypting">
-  {#each rows as row}
-    <div class="dump-row"><span class="off">{row.offset}</span>{'  '}{#each row.cells as c}<span class:locked={c.locked}>{c.hex}</span>{' '}{/each}{' '}{#each row.cells as c}<span class:locked={c.locked}>{c.ch}</span>{/each}</div>
-  {/each}
-</div>
+<pre class="dump" class:stopped={$state.stopped} use:measureWidth={onWidth} aria-label="decrypting">{#each rows as row, i}{#if i}{'\n'}{/if}<span
+      class="off">{row.offset}</span>{'  '}{#each row.cells as c}<span class:locked={c.locked}>{c.hex}</span>{' '}{/each}{' '}{#each row.cells as c}<span
+        class:locked={c.locked}>{c.ch}</span>{/each}{/each}</pre>
 
 <style>
   .dump {
+    margin: 0;
+    line-height: inherit;
     color: var(--t1);
+    white-space: pre;
     overflow: hidden;
   }
   .stopped {
     opacity: 0.55;
-  }
-  .dump-row {
-    white-space: pre;
-    overflow: hidden;
   }
   .off {
     color: color-mix(in srgb, var(--t1) 70%, transparent);

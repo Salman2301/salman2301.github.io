@@ -14,6 +14,8 @@ export interface LiveState {
   progress?: number;
   /** Interrupted (Ctrl+C): drawn dimmed. */
   stopped?: boolean;
+  /** Drawn as a boxed headline, e.g. ACCESS GRANTED. */
+  banner?: boolean;
 }
 
 export interface DecryptState {

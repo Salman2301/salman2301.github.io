@@ -8,7 +8,8 @@ const widget: WidgetDef = {
   description: 'Falling glyphs in your theme colours. Click or space to pause.',
   icon: '⁞⁞',
   component: Matrix,
-  defaultConfig: { ...DEFAULT_SETTINGS },
+  // No defaultConfig on purpose: an empty config reads as the defaults, and
+  // `open matrix` on an existing pane would otherwise reset its settings.
   keywords: ['matrix', 'rain', 'screensaver', 'ambient', 'hacker', 'code', 'katakana'],
   paneTitle: (config) => {
     const { charset } = readSettings(config);

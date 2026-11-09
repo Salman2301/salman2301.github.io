@@ -61,26 +61,23 @@
   <div class="info">
     <p class="who"><span class="hl">{user}</span><span class="at">@</span><span class="hl">{host}</span></p>
     <p class="who-rule" aria-hidden="true">{'-'.repeat(user.length + host.length + 1)}</p>
+    <!-- one grid for both groups, so the owner rows line up with the system rows -->
     <dl>
       {#each system as row (row.label)}
         <dt>{row.label}</dt>
         <dd>{row.value}</dd>
       {/each}
+      {#each owner as row, i (row.label)}
+        <dt class:owner-start={i === 0}>{row.label}</dt>
+        <dd class:owner-start={i === 0}>
+          {#if row.links}
+            {#each row.links as link, j}{#if j}<span class="sep">{' · '}</span>{/if}<a href={link.href} target="_blank" rel="noopener noreferrer">{link.text}</a>{/each}
+          {:else}
+            {row.value}
+          {/if}
+        </dd>
+      {/each}
     </dl>
-    {#if owner.length}
-      <dl class="owner">
-        {#each owner as row (row.label)}
-          <dt>{row.label}</dt>
-          <dd>
-            {#if row.links}
-              {#each row.links as link, i}{#if i}<span class="sep"> · </span>{/if}<a href={link.href} target="_blank" rel="noopener noreferrer">{link.text}</a>{/each}
-            {:else}
-              {row.value}
-            {/if}
-          </dd>
-        {/each}
-      </dl>
-    {/if}
     <div class="swatches" aria-label="theme colours">
       {#each SWATCHES as v}<span style="background:var({v})" title={v} />{/each}
     </div>
@@ -170,8 +167,8 @@
     color: var(--t2);
     overflow-wrap: anywhere;
   }
-  .owner {
-    margin-top: 1.5em;
+  .owner-start {
+    margin-top: 1em;
   }
   a {
     color: var(--t2);
