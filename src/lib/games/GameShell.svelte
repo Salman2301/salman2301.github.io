@@ -58,7 +58,19 @@
 
   let api = makeApi();
 
+  /**
+   * A run that ends without a game over (restart, back to the arcade, closing
+   * the pane or the page) still counts: its score goes in the high scores.
+   * Not for lower-is-better games, where an unfinished run is not a result.
+   */
+  function saveRun() {
+    if (!started || over || !(score > 0) || game.lowerIsBetter) return;
+    recordScore(game.id, score);
+    score = 0;
+  }
+
   async function restart() {
+    saveRun();
     downHandlers = new Set();
     upHandlers = new Set();
     runId += 1;
@@ -141,12 +153,13 @@
     if (focused) root?.focus({ preventScroll: true });
   });
   onDestroy(() => {
+    saveRun();
     downHandlers.clear();
     upHandlers.clear();
   });
 </script>
 
-<svelte:window on:blur={() => (windowFocused = false)} on:focus={() => (windowFocused = true)} />
+<svelte:window on:blur={() => (windowFocused = false)} on:focus={() => (windowFocused = true)} on:pagehide={saveRun} />
 
 <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
 <div class="shell" bind:this={root} tabindex="0" on:keydown={onKeyDown} on:keyup={onKeyUp} role="application" aria-label={game.title}>

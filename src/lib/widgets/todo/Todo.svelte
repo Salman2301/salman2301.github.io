@@ -18,12 +18,14 @@
     renameTask,
     revealTaskId,
     setDue,
+    setRepeat,
     setTaskNotes,
     tasks,
     toggleTask,
     type Task,
   } from '../../core/tasks';
   import { friendlyDate } from '../../core/dates';
+  import { repeatLabel } from '../../core/repeat';
   import { activeSpace, ALL, deleteSpace, setActiveSpace } from '../../core/spaces';
   import { linksIn, openMention, segments } from '../../core/mentions';
   import type { Note } from '../../widgets/notes/store';
@@ -142,6 +144,17 @@
   /** The task that is getting a new sub-task. */
   let subFor: string | null = null;
   let subText = '';
+
+  /** The repeat menu in the due-date popup; anything else can be typed: @every mon, thu. */
+  const REPEAT_CHOICES = [
+    { value: 'every day', label: 'every day' },
+    { value: 'every weekday', label: 'weekdays' },
+    { value: 'every week', label: 'every week' },
+    { value: 'every 2 weeks', label: 'every 2 weeks' },
+    { value: 'every month', label: 'every month' },
+    { value: 'every year', label: 'every year' },
+  ];
+  const repeatChoice = (r: string | undefined) => r ?? '';
 
   function add() {
     if (addTask(text, { projectId: project.id })) text = '';
@@ -297,7 +310,7 @@
   </header>
 
   <form on:submit|preventDefault={add}>
-    <input bind:this={input} use:mention={'note'} bind:value={text} on:keydown={onInputKey} on:paste={(e) => onPaste(e)} placeholder="add a task to {project.name}. @tmrw sets a reminder, @ links a note" maxlength="200" aria-label="New task" spellcheck="false" />
+    <input bind:this={input} use:mention={'note'} bind:value={text} on:keydown={onInputKey} on:paste={(e) => onPaste(e)} placeholder="add a task to {project.name}. @tmrw sets a reminder, @daily repeats, @ links a note" maxlength="200" aria-label="New task" spellcheck="false" />
   </form>
   {#if pasteNote}<p class="paste-note" role="status">{pasteNote}</p>{/if}
 
@@ -325,9 +338,18 @@
           {#if dueFor === t.id}
             <div class="due-pop">
               <DatePicker value={t.due ?? ''} withTime on:pick={(e) => { setDue(t.id, e.detail); dueFor = null; }} on:close={() => (dueFor = null)} />
+              <label class="repeat-row" data-picker-toggle>
+                <span>repeat</span>
+                <select value={repeatChoice(t.repeat)} on:change={(e) => setRepeat(t.id, e.currentTarget.value || null)} aria-label="Repeat">
+                  <option value="">never</option>
+                  {#each REPEAT_CHOICES as c}<option value={c.value}>{c.label}</option>{/each}
+                  {#if t.repeat && !REPEAT_CHOICES.some((c) => c.value === t.repeat)}<option value={t.repeat}>{t.repeat}</option>{/if}
+                </select>
+              </label>
             </div>
           {/if}
         </span>
+        {#if t.repeat}<span class="rep" title="Repeats {t.repeat}{t.timesDone ? `, done ${t.timesDone} times` : ''}. Ticking it moves it to the next time.">↻ {repeatLabel(t.repeat)}</span>{/if}
         <span class="gap" />
         {#if $projects.length > 1}
           <select
@@ -696,6 +718,37 @@
   .due.overdue {
     color: var(--hl1);
     text-decoration: underline wavy;
+  }
+  .rep {
+    flex: 0 0 auto;
+    font-size: 11px;
+    color: var(--hl1);
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+  .repeat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 6px 10px;
+    border: 1px solid var(--bg2);
+    border-radius: 8px;
+    background: var(--bg1);
+    font-size: 12px;
+    color: var(--t1);
+  }
+  .repeat-row select {
+    flex: 1;
+    background: transparent;
+    color: var(--t2);
+    border: 1px solid var(--bg2);
+    border-radius: 4px;
+    font: inherit;
+    padding: 2px 4px;
+  }
+  .repeat-row option {
+    background: var(--bg1);
   }
   .due-pop {
     position: absolute;

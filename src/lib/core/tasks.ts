@@ -1,5 +1,7 @@
 import { derived, get, writable } from 'svelte/store';
-import { resolveDateWord } from './dates';
+import { friendlyDate, resolveDateWord, ymd } from './dates';
+import { notify } from './notify';
+import { extractRepeat, nextDue, parseRepeat } from './repeat';
 import { persisted } from './storage';
 
 /**
@@ -21,6 +23,15 @@ export interface Task {
   spentMs?: number;
   /** Due date: "YYYY-MM-DD" or "YYYY-MM-DD HH:MM". */
   due?: string;
+  /**
+   * Repeat rule, e.g. "every day", "every mon, wed" (see repeat.ts). Ticking
+   * a repeating task moves its due date to the next time instead of finishing it.
+   */
+  repeat?: string;
+  /** How many times a repeating task was ticked off. */
+  timesDone?: number;
+  /** When a repeating task was last ticked off. */
+  lastDoneAt?: number;
   /** Project this task belongs to. Missing means the Inbox (tasks made before projects). */
   projectId?: string;
   /** Set on a sub-task: the task it belongs to. */
@@ -116,9 +127,10 @@ function newId(prefix = 't') {
  * [@time: 2026-11-10 09:30], or the older @[label](date:...)) or a typed
  * date word (@tmrw, @monday, @2026-12-01). The first one becomes the due date, and all are removed.
  */
-export function extractDue(text: string, now = new Date()): { text: string; due?: string } {
+export function extractDue(text: string, now = new Date()): { text: string; due?: string; repeat?: string } {
+  const rep = extractRepeat(text, now);
   let due: string | undefined;
-  const out = text
+  const out = rep.text
     .replace(/@\[[^\]\n]*\]\(date:([\w:.-]+)\)/g, (_, v: string) => {
       due ??= v.replace('T', ' ');
       return ' ';
@@ -135,11 +147,13 @@ export function extractDue(text: string, now = new Date()): { text: string; due?
     })
     .replace(/\s{2,}/g, ' ')
     .trim();
+  // A date given with a repeat (@weekly @2026-12-01) is when it starts.
+  if (rep.repeat) return { text: out, due: due ?? rep.due, repeat: rep.repeat };
   return { text: out, due };
 }
 
 export function addTask(text: string, opts: { projectId?: string; parentId?: string } = {}): Task | null {
-  const { text: clean, due } = extractDue(text);
+  const { text: clean, due, repeat } = extractDue(text);
   if (!clean) return null;
   const parent = opts.parentId ? get(tasks).find((t) => t.id === opts.parentId) : undefined;
   if (opts.parentId && (!parent || parent.parentId)) return null;
@@ -154,6 +168,7 @@ export function addTask(text: string, opts: { projectId?: string; parentId?: str
   };
   if (parent) task.parentId = parent.id;
   if (due) task.due = due;
+  if (repeat) task.repeat = repeat;
   tasks.update((list) => [...list, task]);
   return task;
 }
@@ -221,7 +236,25 @@ export function moveTask(id: string, projectId: string) {
   );
 }
 
+/**
+ * Tick a task off, or back on. A repeating task is not finished: it moves
+ * to its next due date, and its sub-tasks open again for the next round.
+ */
 export function toggleTask(id: string) {
+  const task = get(tasks).find((t) => t.id === id);
+  const rule = task && !task.done && task.repeat ? parseRepeat(task.repeat) : null;
+  if (task && rule) {
+    const due = nextDue(rule, task.due ?? ymd(new Date()));
+    tasks.update((list) =>
+      list.map((t) => {
+        if (t.id === id) return { ...t, due, timesDone: (t.timesDone ?? 0) + 1, lastDoneAt: Date.now() };
+        if (t.parentId === id && t.done) return { ...t, done: false, doneAt: undefined };
+        return t;
+      }),
+    );
+    notify(`#${task.no} done, next ${friendlyDate(due)}`, { body: `repeats ${task.repeat}`, tone: 'success' });
+    return;
+  }
   tasks.update((list) =>
     list.map((t) => (t.id === id ? { ...t, done: !t.done, doneAt: !t.done ? Date.now() : undefined } : t)),
   );
@@ -239,9 +272,25 @@ export function removeTask(id: string) {
 }
 
 export function renameTask(id: string, text: string) {
-  const { text: clean, due } = extractDue(text);
+  const { text: clean, due, repeat } = extractDue(text);
   if (!clean) return;
-  tasks.update((list) => list.map((t) => (t.id === id ? { ...t, text: clean.slice(0, 200), due: due ?? t.due } : t)));
+  tasks.update((list) => list.map((t) => (t.id === id ? { ...t, text: clean.slice(0, 200), due: due ?? t.due, repeat: repeat ?? t.repeat } : t)));
+}
+
+/**
+ * Make a task repeat ("daily", "every mon, wed", ...) or stop repeating
+ * (null). A task with no due date gets one: the rule's first day from today.
+ * Returns false when the rule cannot be read.
+ */
+export function setRepeat(id: string, text: string | null): boolean {
+  if (!text) {
+    tasks.update((list) => list.map((t) => (t.id === id ? { ...t, repeat: undefined } : t)));
+    return true;
+  }
+  const r = extractRepeat(`@${text.replace(/^@/, '').replace(/^(?!every\b|daily|weekly|weekdays|weekends|monthly|yearly|annually)/i, 'every ')}`);
+  if (!r.repeat) return false;
+  tasks.update((list) => list.map((t) => (t.id === id ? { ...t, repeat: r.repeat, due: t.due ?? r.due, done: false, doneAt: undefined } : t)));
+  return true;
 }
 
 export function setTaskNotes(id: string, notes: string) {

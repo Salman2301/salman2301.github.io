@@ -47,7 +47,10 @@
 </script>
 
 {#if current}
-  <GameShell game={current} {focused} onExit={exit} />
+  <!-- a fresh shell per game: the last game's run is saved and its score does not carry over -->
+  {#key current.id}
+    <GameShell game={current} {focused} onExit={exit} />
+  {/key}
 {:else}
   <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div class="arcade" on:keydown={onKey} data-pane={paneId}>

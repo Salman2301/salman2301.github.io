@@ -25,6 +25,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
     title: 'Workspace',
     where: 'anywhere',
     items: [
+      { keys: [['Mod', 'K'], ['Alt', 'K']], does: 'search tasks, notes, commands, themes, stations' },
       { keys: [['Alt', '/']], does: 'show this list of shortcuts' },
       { keys: [['Alt', '1…9']], does: 'focus pane 1 to 9' },
       { keys: [['Alt', '←↑↓→']], does: 'focus the pane in that direction' },

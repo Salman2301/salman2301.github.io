@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import type { GameApi } from '../../core/types';
   import { clamp, fitCanvas, heldKeys, mix, rand, readPalette, startLoop, watchPalette, type Palette } from '../kit';
+  import { CAR_H, lanePos, LANES, newTraffic, spawn, stepTraffic, type Car } from './traffic';
 
   export let paused = true;
   export let api: GameApi;
@@ -9,19 +10,17 @@
   const VW = 128;
   const VH = 168;
   const ROAD = 66;
-  const LANES = 3;
   const PY = 134; // player screen y
   const CAR_W = 9;
-  const CAR_H = 15;
 
   // road centre for a world distance: gentle curves that get wilder further on
   const centre = (d: number) => VW / 2 + Math.sin(d / 520) * 22 + Math.sin(d / 170) * 6 * Math.min(1, d / 6000);
+  /** Screen x of a lane (fractional lanes are between two lanes). */
   const laneX = (d: number, lane: number) => centre(d) - ROAD / 2 + (ROAD / LANES) * (lane + 0.5);
 
   // Other cars: five shades from the theme, none of them the player's accent.
-  const traffic = (p: Palette) => [p.t1, p.t2, mix(p.t1, p.t2, 0.5), mix(p.t1, p.bg2, 0.5), mix(p.t2, p.bg2, 0.5)];
+  const trafficTones = (p: Palette) => [p.t1, p.t2, mix(p.t1, p.t2, 0.5), mix(p.t1, p.bg2, 0.5), mix(p.t2, p.bg2, 0.5)];
 
-  interface Car { d: number; lane: number; offset: number; speed: number; tone: number; passed: boolean }
   interface Can { d: number; lane: number; kind: 'fuel' | 'nitro' }
 
   let dist = 0;
@@ -34,7 +33,7 @@
   let invuln = 0;
   let score = 0;
   let overtakes = 0;
-  let cars: Car[] = [];
+  const traffic = newTraffic();
   let cans: Can[] = [];
   let spawnT = 0;
   let canT = 6;
@@ -68,7 +67,7 @@
       if (crashT <= 0) {
         x = centre(dist);
         invuln = 2;
-        cars = cars.filter((c) => Math.abs(c.d - dist) > 60);
+        traffic.cars = traffic.cars.filter((c) => Math.abs(c.d - dist) > 60);
       }
       return;
     }
@@ -104,12 +103,10 @@
     spawnT -= dt;
     if (spawnT <= 0) {
       spawnT = Math.max(0.45, 1.6 - level * 0.12) * rand(0.7, 1.3);
-      const lane = Math.floor(rand(0, LANES));
       const ahead = speed > 30 || Math.random() < 0.5;
-      cars.push({
-        d: dist + (ahead ? VH + 20 : -60), lane, offset: rand(-3, 3),
-        speed: rand(35, 70 + level * 4), tone: Math.floor(rand(0, 5)), passed: false,
-      });
+      // spawn() picks a lane that is clear and keeps a way through, or adds nothing
+      const added = spawn(traffic, dist + (ahead ? VH + 20 : -60), rand(35, 70 + level * 4), Math.floor(rand(0, 5)));
+      if (!added) spawnT = 0.25; // no safe lane right now: try again soon, so traffic stays busy
     }
     canT -= dt;
     if (canT <= 0) {
@@ -117,12 +114,10 @@
       cans.push({ d: dist + VH + 10, lane: Math.floor(rand(0, LANES)), kind: Math.random() < 0.7 ? 'fuel' : 'nitro' });
     }
 
-    for (const c of cars) {
-      // cars change lanes now and then, and drive their own speed
-      c.d += c.speed * dt;
-      if (Math.random() < 0.002 * level) c.lane = clamp(c.lane + (Math.random() < 0.5 ? -1 : 1), 0, LANES - 1);
+    stepTraffic(traffic, dt, level);
+    for (const c of traffic.cars) {
       const cy = PY - (c.d - dist);
-      const cx = laneX(c.d, c.lane) + c.offset;
+      const cx = laneX(c.d, lanePos(c));
       if (!c.passed && c.d < dist - CAR_H) {
         c.passed = true;
         overtakes++;
@@ -140,7 +135,7 @@
         api.sfx('score');
       }
     }
-    cars = cars.filter((c) => c.d > dist - 200 && c.d < dist + 400);
+    traffic.cars = traffic.cars.filter((c) => c.d > dist - 200 && c.d < dist + 400);
     cans = cans.filter((c) => c.d > dist - 40);
 
     const s = Math.floor(dist / 10) + overtakes * 25;
@@ -179,6 +174,24 @@
     ctx.globalAlpha = 1;
   }
 
+  /** A blinking turn signal on the side the car is moving to, from the first blink until it is in the lane. */
+  function indicator(c: Car, cx: number, cy: number) {
+    if (!ctx || c.target === c.lane) return;
+    if (Math.floor(performance.now() / 180) % 2) return;
+    const side = c.target > c.lane ? 1 : -1;
+    const l = Math.round(cx - CAR_W / 2);
+    const ex = side > 0 ? l + CAR_W + 1 : l - 3; // just outside the wheels
+    const top = Math.round(cy - CAR_H / 2);
+    ctx.fillStyle = pal.hl1;
+    ctx.fillRect(ex, top, 2, 2);
+    ctx.fillRect(ex, top + CAR_H - 2, 2, 2);
+    // a soft glow so it reads at a glance
+    ctx.globalAlpha = 0.35;
+    ctx.fillRect(ex + side, top - 1, 2, 4);
+    ctx.fillRect(ex + side, top + CAR_H - 3, 2, 4);
+    ctx.globalAlpha = 1;
+  }
+
   function draw() {
     if (!ctx || !pal) return;
     ctx.save();
@@ -213,9 +226,13 @@
       ctx.font = 'bold 5px "JetBrains Mono", monospace';
       ctx.fillText(can.kind === 'fuel' ? 'F' : 'N', cx - 1.5, cy + 2);
     }
-    for (const c of cars) {
+    const tones = trafficTones(pal);
+    for (const c of traffic.cars) {
       const cy = PY - (c.d - dist);
-      if (cy > -20 && cy < VH + 20) car(laneX(c.d, c.lane) + c.offset, cy, traffic(pal)[c.tone]);
+      if (cy <= -20 || cy >= VH + 20) continue;
+      const cx = laneX(c.d, lanePos(c));
+      car(cx, cy, tones[c.tone]);
+      indicator(c, cx, cy);
     }
     if (!over) car(x, PY, pal.hl1, crashT > 0 || (invuln > 0 && Math.floor(invuln * 10) % 2) ? 0.4 : 1);
     if (nitro > 0) {

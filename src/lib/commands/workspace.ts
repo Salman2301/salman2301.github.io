@@ -162,15 +162,16 @@ const commands: CommandDef[] = [
   },
   {
     name: 'reset',
-    description: 'reset the layout back to the classic terminal',
+    description: 'reset the layout back to the classic terminal (--all clears everything except high scores)',
     usage: 'reset [--all]',
     group: 'workspace',
     complete: () => ['--all'],
     run: (ctx) => {
       if (ctx.args[0] === '--all') {
         try {
+          // high scores are never reset
           Object.keys(localStorage)
-            .filter((k) => k.startsWith('s2301:'))
+            .filter((k) => k.startsWith('s2301:') && k !== 's2301:games:highscores')
             .forEach((k) => localStorage.removeItem(k));
         } catch {
           /* ignore */

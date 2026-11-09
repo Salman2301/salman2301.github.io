@@ -20,7 +20,7 @@
 
 <script lang="ts">
   import { onDestroy, onMount, setContext, tick } from 'svelte';
-  import { getCommand, commandNames } from '../../core/registry';
+  import { commandHelp, getCommand, commandNames } from '../../core/registry';
   import type { Config } from '../../core/types';
   import { commandHistory, PROMPT_HOST, PROMPT_USER, TERMINAL_CTX, terminals, type TerminalContext } from '../../terminal/context';
   import { commonPrefix, levenshtein, splitChain, tokenize } from '../../terminal/parse';
@@ -78,6 +78,11 @@
         .sort((a, b) => a.d - b.d)[0];
       const hint = best && best.d <= 2 ? ` Did you mean "${best.n}"?` : ' Type "help" to list commands.';
       print(`command not found: ${name}.${hint}`, 'error');
+      return;
+    }
+    // `<command> --help` / `-h` explains any command
+    if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
+      print(commandHelp(cmd));
       return;
     }
     await cmd.run({ raw: line, args, paneId, print, render, clear, run: (l) => runLine(l, signal), signal });
@@ -284,8 +289,10 @@
     input?.setSelectionRange(value.length, value.length);
   }
 
-  function onSurfaceClick() {
+  function onSurfaceClick(e: MouseEvent) {
     if (window.getSelection()?.toString()) return;
+    // fields inside command output keep their focus
+    if ((e.target as HTMLElement | null)?.closest?.('.block input, .block textarea, .block select')) return;
     focusInput();
   }
 
