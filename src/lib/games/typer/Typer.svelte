@@ -17,17 +17,32 @@
     if (e === 'key') playSfx('key');
     else if (e === 'miss') tone(170, 70, 'square', 0.025);
     else if (e === 'breach') api.sfx('hit');
-    else if (e === 'over') finish();
+    else if (e === 'over') beginEnding();
     else {
       api.setScore(game.score);
       api.sfx(e === 'kill' ? 'blip' : 'score');
     }
   }
 
-  function finish() {
-    api.gameOver(game.score, game.summary());
+  /*
+   * The player is usually mid-word when the last life goes, and the shell
+   * restarts on R or Space once the game-over screen is up. A short beat with
+   * the board frozen swallows those stray keys first.
+   */
+  const END_BEAT_MS = 1100;
+  let endTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function beginEnding() {
+    keyboardWanted = false;
     // Close the soft keyboard and hand keys back to the shell (Enter restarts).
     if (typing) (fieldEl?.closest('[tabindex="0"]') as HTMLElement | null)?.focus({ preventScroll: true });
+    endTimer = setTimeout(finish, END_BEAT_MS);
+  }
+
+  function finish() {
+    api.gameOver(game.score, game.summary());
+    game.banner = null;
+    game = game;
   }
 
   /* ---------------------------------------------------------- physical keys */
@@ -51,8 +66,10 @@
   const SENTINEL = '__';
   let input: HTMLInputElement;
   let last = SENTINEL;
+  /** The hidden input has focus (the soft keyboard is up). */
   let typing = false;
-  let resumeTyping = false;
+  /** The player opened the soft keyboard this run; bring it back after a pause. */
+  let keyboardWanted = false;
   let coarse = false;
   let pointerType = '';
   $: touchUi = coarse || pointerType === 'touch';
@@ -89,7 +106,11 @@
   }
 
   function openKeyboard() {
-    if (touchUi && !game.over) input?.focus();
+    if (!touchUi || game.over || !input) return;
+    keyboardWanted = true;
+    // A field focused without a tap (e.g. after a resume) may have no keyboard on iOS; refocusing in the tap shows it.
+    if (document.activeElement === input) input.blur();
+    input.focus();
   }
 
   function onInputFocus() {
@@ -103,11 +124,12 @@
     watchViewport(false);
   }
 
-  // Pausing with Escape keeps the keyboard up; bring typing back on resume.
-  $: if (paused && typing) resumeTyping = true;
-  $: if (!paused && resumeTyping) {
-    resumeTyping = false;
-    if (!typing) input?.focus({ preventScroll: true });
+  // The tap that starts the game opens the soft keyboard, and the tap that
+  // resumes it reopens one the pause took away (pause buttons take focus).
+  let wasPaused = paused;
+  $: {
+    if (wasPaused && !paused && touchUi && !typing && !game.over && (keyboardWanted || game.time === 0)) openKeyboard();
+    wasPaused = paused;
   }
 
   /* ------------------------------------- keep the base line above the keyboard */
@@ -163,7 +185,7 @@
   $: chPx = probeW ? probeW / 10 : fontPx * 0.6;
   $: if (fieldW && chPx) game.fieldChars = fieldW / chPx;
   $: compact = boxH > 0 && (boxH < 260 || boxW < 380);
-  $: tiny = boxW > 0 && boxW < 270;
+  $: tiny = boxW > 0 && (boxW < 270 || boxH < 180);
 
   const SPARKS = Array.from({ length: 10 }, (_, i) => i * 36);
   const HEART = 'M8 14.2S1.3 10 1.3 5.6A3.3 3.3 0 0 1 8 4a3.3 3.3 0 0 1 6.7 1.6C14.7 10 8 14.2 8 14.2z';
@@ -173,7 +195,8 @@
   const centerPx = (w: Word) => (fieldW - (w.text.length + 2) * chPx) * w.x + ((w.text.length + 1) * chPx) / 2;
 
   $: target = game.target;
-  $: placeholder = touchUi && !typing ? 'tap the board to type' : game.words.length ? 'type a word' : '';
+  // On touch, the "tap to type" pill on the board says it until the keyboard is up.
+  $: placeholder = game.over || !game.words.length || (touchUi && !typing) ? '' : 'type a word';
 
   /* -------------------------------------------------------------------- loop */
 
@@ -204,6 +227,7 @@
   onDestroy(() => {
     stopLoop();
     offKey();
+    clearTimeout(endTimer);
     mq?.removeEventListener('change', onMq);
     if (typeof window !== 'undefined') watchViewport(false);
     if (measureRaf) cancelAnimationFrame(measureRaf);
@@ -216,6 +240,7 @@
   <div
     class="field"
     class:slowed={game.slowLeft > 0}
+    class:ended={game.over}
     class:touch={touchUi}
     bind:this={fieldEl}
     bind:clientWidth={fieldW}
@@ -253,14 +278,14 @@
 
     {#if game.banner}
       {#key game.banner.id}
-        <div class="banner" out:fade={{ duration: 180 }}>
+        <div class="banner" out:fade|local={{ duration: 180 }}>
           <b>{game.banner.title}</b>
           {#if !compact}<span>{game.banner.sub}</span>{/if}
         </div>
       {/key}
     {/if}
 
-    <div class="baseline" class:breach={game.time - game.breachAt < 0.45} />
+    <div class="baseline" class:breach={game.over || game.time - game.breachAt < 0.45} />
 
     {#if touchUi && !typing && !game.over}
       <span class="tap-hint">tap to type</span>
@@ -272,6 +297,7 @@
       type="text"
       tabindex="-1"
       autocomplete="off"
+      autocorrect="off"
       autocapitalize="none"
       spellcheck="false"
       enterkeyhint="done"
@@ -297,10 +323,8 @@
     </span>
     {#if game.slowLeft > 0}<span class="slow-tag">slow {Math.ceil(game.slowLeft)}s</span>{/if}
     <span class="mult" class:hot={game.multiplier > 1} title="combo multiplier">x{game.multiplier}</span>
-    {#if !compact}
-      <span class="meta">combo {game.combo}</span>
-      <span class="meta">wave {game.wave}</span>
-    {/if}
+    {#if !compact}<span class="meta">combo {game.combo}</span>{/if}
+    {#if !tiny}<span class="meta">wave {game.wave}</span>{/if}
   </div>
 </div>
 
@@ -320,6 +344,7 @@
     min-height: 0;
     overflow: hidden;
     cursor: text;
+    font-family: var(--font-mono);
     background-image: radial-gradient(color-mix(in srgb, var(--bg2) 60%, transparent) 1px, transparent 1.2px);
     background-size: 24px 24px;
     background-position: 12px 12px;
@@ -338,6 +363,13 @@
   }
   .field.slowed {
     background-color: color-mix(in srgb, var(--hl1) 6%, transparent);
+  }
+  .field.ended {
+    background-color: color-mix(in srgb, var(--hl1) 8%, transparent);
+  }
+  .field.ended .word {
+    opacity: 0.3;
+    transition: opacity 0.4s;
   }
   .probe {
     position: absolute;
@@ -422,7 +454,7 @@
   .points {
     position: absolute;
     left: 0;
-    top: -0.6em;
+    top: -1.1em;
     font-size: 0.75em;
     font-weight: 700;
     color: var(--hl1);
@@ -506,7 +538,8 @@
   }
   .hud.tiny {
     gap: 6px;
-    padding: 2px 6px;
+    min-height: 22px;
+    padding: 1px 6px;
   }
   .lives {
     display: flex;
@@ -534,6 +567,7 @@
     overflow: hidden;
     white-space: pre;
     color: var(--t2);
+    font-family: var(--font-mono);
     font-size: 13px;
   }
   .prompt.shake {
@@ -577,6 +611,13 @@
   }
   .meta {
     flex: none;
+  }
+
+  /* Stacked phone panes size a game by its content, and this board is all absolutely placed. */
+  @media (max-width: 720px) {
+    .typer {
+      min-height: min(50vh, 440px);
+    }
   }
 
   /* The shell's arrow pad has nothing to steer in a typing game: give the board that room. */
