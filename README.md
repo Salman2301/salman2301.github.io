@@ -25,8 +25,12 @@ Type `help` in the terminal to see every command.
 - **Tiling panes**: split, resize (drag or keyboard), maximize, drag a pane header onto another pane to swap them, and turn any pane into any widget from its title menu.
 - **Templates**: pick a layout with `Alt+T` or `templates`, or save your own (`template save <name>`). More templates appear automatically as more widgets are added.
 - **Widgets**: the terminal, pomodoro (`pomodoro`), tasks (`todo`), Hacker News (`news`), markdown notes (`notes`, edit / split / preview, import and export .md) and the arcade.
-- **Arcade**: Snake, Tetris, Space Impact, Bounce and Car Racing, with saved high scores (`games`, `play tetris`). WASD or arrows everywhere, Space pauses and resumes.
-- **Extras**: 16 themes (`theme`), share links that recreate a layout (`share`), a tmux-style status bar, tab completion with inline suggestions, command chaining with `&&`.
+  - **Clock** (`clock`): digital or analog, 12/24h, world clocks (`clock add Asia/Tokyo`).
+  - **Timer** (`timer 5m`, `stopwatch`): stopwatch with laps, and a countdown that still rings when its pane is closed.
+  - **YouTube** (`yt <link>`, `lofi`), **YouTube Music** (`ytm`) and **Spotify** (`spotify <link>`) players with presets.
+  - **Digital Rain** (`open matrix`) and **Embed** (`embed <url>`) for any page that allows it.
+- **Arcade**: Snake, Tetris, Space Impact, Bounce, Car Racing, Brick Breaker, Byte Runner, Typing Defense, Pairs and Sudoku, with saved high scores (`games`, `play sudoku`). WASD or arrows everywhere, Space pauses and resumes, and touch screens get an on-screen pad.
+- **Extras**: 16 themes (`theme`), share links that recreate a layout (`share`), `neofetch`, `hack`, a tmux-style status bar, tab completion with inline suggestions, command chaining with `&&`.
 
 Everything is saved in your browser's local storage. Nothing is sent to a server.
 
