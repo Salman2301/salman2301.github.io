@@ -1,11 +1,25 @@
 import { drawSprite, type Palette } from '../kit';
-import { BLOCK, BLOCK_H, GROUND_Y, HERO_X, PX_PER_M, VH, VW, type Obstacle, type Pickup, type RunnerWorld } from './world';
+import { BLOCK, BLOCK_H, GROUND_Y, HERO_X, PX_PER_M, VH, type Obstacle, type Pickup, type RunnerWorld } from './world';
 
 /** Renders a RunnerWorld in virtual pixels. Every colour comes from the theme palette. */
 
 type Ctx = CanvasRenderingContext2D;
 
+/** Canvas size in virtual px (see VIEW in world.ts) and CSS px per virtual px. */
+export interface View {
+  w: number;
+  h: number;
+  scale: number;
+}
+
 const FONT = '"JetBrains Mono", ui-monospace, monospace';
+/** HUD text never renders smaller than this many CSS px, however small the pane. */
+const MIN_TEXT_PX = 8;
+
+/** A font of `size` virtual px, enlarged when the canvas is scaled down too far to read it. */
+function font(size: number, scale: number, bold = false) {
+  return `${bold ? 'bold ' : ''}${Math.max(size, MIN_TEXT_PX / scale).toFixed(2)}px ${FONT}`;
+}
 
 // the hero: a block cursor on little legs
 const LEGS_RUN = [
@@ -57,72 +71,90 @@ interface CodeRow {
   shift: number;
 }
 
-function codeRow(y: number, speed: number, alpha: number, size: number): CodeRow {
-  const k = Math.floor(Math.random() * SNIPPETS.length);
-  const lines = [...SNIPPETS.slice(k), ...SNIPPETS.slice(0, k)];
-  return { y, speed, alpha, size, text: lines.join('     '), shift: Math.random() * 600 };
+/** A row of a few random snippets with uneven gaps, so the sky reads as scattered code, not a wall. */
+function codeRow(y: number, near: boolean): CodeRow {
+  const parts: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    parts.push(SNIPPETS[Math.floor(Math.random() * SNIPPETS.length)]);
+    parts.push(' '.repeat(6 + Math.floor(Math.random() * 18)));
+  }
+  const text = parts.join('');
+  const shift = Math.random() * 600;
+  // far rows are small, dim and slow; near rows bigger and faster: a cheap parallax
+  return near ? { y, speed: 0.32, alpha: 0.12, size: 6, text, shift } : { y, speed: 0.12, alpha: 0.07, size: 5, text, shift };
 }
 
-// far rows drift slowly, near rows faster: a cheap parallax
-const CODE_ROWS: CodeRow[] = [
-  codeRow(22, 0.12, 0.11, 5),
-  codeRow(34, 0.12, 0.11, 5),
-  codeRow(46, 0.12, 0.11, 5),
-  codeRow(58, 0.12, 0.11, 5),
-  codeRow(28, 0.32, 0.19, 6),
-  codeRow(52, 0.32, 0.19, 6),
-  codeRow(74, 0.32, 0.16, 6),
-];
+/** Rows of background code filling the sky from `top` down to just above the ground. */
+function codeRows(top: number): CodeRow[] {
+  const rows: CodeRow[] = [];
+  for (let y = top, i = 0; y <= GROUND_Y - 14; y += 12, i++) rows.push(codeRow(Math.round(y), i % 2 === 1));
+  return rows;
+}
 
-export function drawRunner(ctx: Ctx, w: RunnerWorld, pal: Palette, now: number) {
+/** Sky rows per canvas, rebuilt when its height changes. */
+const skies = new WeakMap<Ctx, { top: number; rows: CodeRow[] }>();
+
+/**
+ * Draw one frame. The world is VH px high with the hero near the left edge.
+ * Wider views show more of the road ahead; taller views show more sky, so
+ * the world is drawn shifted down and the HUD stays at the top.
+ */
+export function drawRunner(ctx: Ctx, w: RunnerWorld, pal: Palette, now: number, view: View) {
+  const extra = Math.max(0, view.h - VH);
+  ctx.save();
   ctx.fillStyle = pal.bg1;
-  ctx.fillRect(0, 0, VW, VH);
-  drawCode(ctx, w, pal);
-  drawBestMarker(ctx, w, pal);
-  drawGround(ctx, w, pal);
+  ctx.fillRect(0, 0, view.w, view.h);
+  ctx.translate(0, extra);
+  drawCode(ctx, w, pal, view.w, 18 - extra);
+  drawBestMarker(ctx, w, pal, view.w, 14 - extra);
+  drawGround(ctx, w, pal, view.w);
   for (const p of w.pickups) drawPickup(ctx, p, pal, now);
   for (const o of w.obstacles) drawObstacle(ctx, o, pal, now);
   drawHero(ctx, w, pal, now);
   drawEffects(ctx, w, pal);
-  drawHud(ctx, w, pal);
+  drawMessage(ctx, w, pal, view);
+  ctx.restore();
+  drawHud(ctx, w, pal, view);
 }
 
-function tile(ctx: Ctx, text: string, offset: number, y: number) {
-  const width = ctx.measureText(text).width + 24;
-  const x = -(offset % width);
-  ctx.fillText(text, x, y);
-  if (x + width < VW) ctx.fillText(text, x + width, y);
+/** Repeat `text` along a row, scrolled left by `offset`, across `width` px, `gap` px apart. */
+function tile(ctx: Ctx, text: string, offset: number, y: number, width: number, gap = 24) {
+  const step = ctx.measureText(text).width + gap;
+  for (let x = -(offset % step); x < width; x += step) ctx.fillText(text, x, y);
 }
 
-function drawCode(ctx: Ctx, w: RunnerWorld, pal: Palette) {
+function drawCode(ctx: Ctx, w: RunnerWorld, pal: Palette, width: number, top: number) {
+  let sky = skies.get(ctx);
+  if (sky?.top !== top) skies.set(ctx, (sky = { top, rows: codeRows(top) }));
   ctx.fillStyle = pal.t1;
-  for (const row of CODE_ROWS) {
+  for (const row of sky.rows) {
     ctx.font = `${row.size}px ${FONT}`;
-    ctx.globalAlpha = row.alpha;
-    tile(ctx, row.text, w.dist * row.speed + row.shift, row.y);
+    // rows fade out with height, so a tall sky stays calm
+    ctx.globalAlpha = row.alpha * (0.35 + (0.65 * (row.y - top)) / Math.max(1, GROUND_Y - top));
+    tile(ctx, row.text, w.dist * row.speed + row.shift, row.y, width);
   }
   ctx.globalAlpha = 1;
 }
 
-function drawBestMarker(ctx: Ctx, w: RunnerWorld, pal: Palette) {
+function drawBestMarker(ctx: Ctx, w: RunnerWorld, pal: Palette, width: number, top: number) {
   const x = Math.round(HERO_X + w.best * PX_PER_M - w.dist);
-  if (w.best <= 0 || x < -2 || x > VW + 2) return;
+  if (w.best <= 0 || x < -2 || x > width + 2) return;
   ctx.fillStyle = pal.hl1;
   ctx.globalAlpha = 0.6;
-  for (let y = 16; y < GROUND_Y; y += 4) ctx.fillRect(x, y, 1, 2);
+  for (let y = top; y < GROUND_Y; y += 4) ctx.fillRect(x, y, 1, 2);
   ctx.globalAlpha = 1;
   ctx.font = `5px ${FONT}`;
-  ctx.fillText('best', x + 2, 20);
+  ctx.fillText('best', x + 2, top + 4);
 }
 
-function drawGround(ctx: Ctx, w: RunnerWorld, pal: Palette) {
+function drawGround(ctx: Ctx, w: RunnerWorld, pal: Palette, width: number) {
   // the ground is made of bits, scrolling with the world
   ctx.fillStyle = pal.t1;
   ctx.font = `5px ${FONT}`;
   ctx.globalAlpha = 0.32;
-  tile(ctx, BITS, w.dist, GROUND_Y + 8);
+  tile(ctx, BITS, w.dist, GROUND_Y + 8, width, 0);
   ctx.globalAlpha = 0.16;
-  tile(ctx, BITS, w.dist + 37, GROUND_Y + 15);
+  tile(ctx, BITS, w.dist + 37, GROUND_Y + 15, width, 0);
   ctx.globalAlpha = 1;
 
   const gaps = [...w.gaps].sort((a, b) => a.x - b.x);
@@ -140,11 +172,11 @@ function drawGround(ctx: Ctx, w: RunnerWorld, pal: Palette) {
     ctx.globalAlpha = 1;
     x = gx + Math.round(g.w);
   }
-  if (x < VW) ctx.fillRect(x, GROUND_Y, VW - x, 1);
+  if (x < width) ctx.fillRect(x, GROUND_Y, width - x, 1);
 
   // ticks just under the line make the speed readable
   ctx.globalAlpha = 0.45;
-  for (let tx = -(w.dist % 12); tx < VW; tx += 12) {
+  for (let tx = -(w.dist % 12); tx < width; tx += 12) {
     const px = Math.round(tx);
     if (!gaps.some((g) => px + 2 > g.x && px < g.x + g.w)) ctx.fillRect(px, GROUND_Y + 2, 2, 1);
   }
@@ -220,13 +252,14 @@ function drawPickup(ctx: Ctx, p: Pickup, pal: Palette, now: number) {
     drawSprite(ctx, COIN, x - 2, y - 3, pal.hl1);
     return;
   }
+  // a small chip: pins above and below a 14 px body
   ctx.fillStyle = pal.t1;
   for (let i = 0; i < 5; i++) {
     ctx.fillRect(x - 6 + i * 3, y - 5, 1, 1);
     ctx.fillRect(x - 6 + i * 3, y + 3, 1, 1);
   }
   ctx.fillStyle = pal.hl1;
-  ctx.fillRect(x - 8, y - 4, 16, 7);
+  ctx.fillRect(x - 7, y - 4, 14, 7);
   ctx.fillStyle = pal.bg1;
   ctx.font = `bold 5px ${FONT}`;
   ctx.textAlign = 'center';
@@ -251,24 +284,33 @@ function drawEffects(ctx: Ctx, w: RunnerWorld, pal: Palette) {
   ctx.textAlign = 'left';
 }
 
-function drawHud(ctx: Ctx, w: RunnerWorld, pal: Palette) {
-  ctx.font = `6px ${FONT}`;
+function drawHud(ctx: Ctx, w: RunnerWorld, pal: Palette, view: View) {
+  ctx.font = font(6, view.scale);
   ctx.fillStyle = pal.hl1;
   ctx.fillText(`$ ${w.coins}${w.exes ? `  .exe ${w.exes}` : ''}`, 4, 9);
   ctx.fillStyle = pal.t2;
   ctx.textAlign = 'right';
-  ctx.fillText(`${w.metres} m`, VW - 4, 9);
+  ctx.fillText(`${w.metres} m`, view.w - 4, 9);
+  ctx.textAlign = 'left';
+}
+
+/** The cause of death, or the controls hint in the first seconds, on a backing that hides the code behind. */
+function drawMessage(ctx: Ctx, w: RunnerWorld, pal: Palette, view: View) {
+  const hint = !w.death && w.time < 4;
+  if (!w.death && !hint) return;
+  const big = !!w.death;
+  ctx.font = big ? font(8, view.scale, true) : font(5, view.scale);
+  let text = w.death ? w.deathMessage : 'w / tap: jump (hold = higher)  ·  s / swipe down: duck';
+  if (hint && ctx.measureText(text).width > view.w - 12) text = 'w / tap jump  ·  s / swipe duck';
+  const y = GROUND_Y - 46;
+  const size = parseFloat(ctx.font.replace('bold ', ''));
   ctx.textAlign = 'center';
-  if (w.death) {
-    ctx.fillStyle = pal.hl1;
-    ctx.font = `bold 8px ${FONT}`;
-    ctx.fillText(w.deathMessage, VW / 2, 42);
-  } else if (w.time < 4) {
-    ctx.fillStyle = pal.t1;
-    ctx.globalAlpha = Math.min(1, 4 - w.time);
-    ctx.font = `5px ${FONT}`;
-    ctx.fillText('w / tap: jump (hold = higher)   s / swipe down: duck', VW / 2, 40);
-    ctx.globalAlpha = 1;
-  }
+  ctx.globalAlpha = hint ? Math.min(1, 4 - w.time) : 1;
+  const tw = Math.ceil(ctx.measureText(text).width);
+  ctx.fillStyle = pal.bg1;
+  ctx.fillRect(Math.round(view.w / 2 - tw / 2) - 4, Math.round(y - size - 1), tw + 8, Math.round(size + 4));
+  ctx.fillStyle = big ? pal.hl1 : pal.t2;
+  ctx.fillText(text, view.w / 2, y);
+  ctx.globalAlpha = 1;
   ctx.textAlign = 'left';
 }

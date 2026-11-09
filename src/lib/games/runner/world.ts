@@ -6,8 +6,16 @@ import { rand, type Palette } from '../kit';
  * DOM. Everything lives in screen space (virtual px) and scrolls left.
  */
 
+/** The world: VW wide and VH high, in virtual px. */
 export const VW = 224;
 export const VH = 108;
+/**
+ * The canvas adapts to the pane within these limits: wider panes see more
+ * of the road ahead, taller ones more sky. Hazards spawn beyond the widest
+ * view so nothing pops in.
+ */
+export const VIEW = { maxW: 296, maxH: 224 };
+const SPAWN_X = VIEW.maxW + 8;
 export const GROUND_Y = 88;
 export const HERO_X = 30;
 export const HERO = { w: 7, h: 10, duckW: 9, duckH: 5 };
@@ -23,6 +31,8 @@ const JUMP_V = 158;
 const FAST_FALL = 1400;
 const COYOTE = 0.09;
 const BUFFER = 0.13;
+/** Seconds the player gets after landing before the next hazard arrives. */
+const REACT = 0.42;
 const START_SPEED = 72;
 const MAX_SPEED = 172;
 const RAMP = 1.25;
@@ -51,7 +61,6 @@ export interface Gap {
   x: number;
   w: number;
 }
-type Hazard = Obstacle | Gap;
 export interface Pickup {
   kind: 'coin' | 'exe';
   x: number;
@@ -124,8 +133,11 @@ export function clearable(height: number, width: number, speed: number): boolean
 }
 /** Widest gap that even a tapped jump crosses with room to spare. */
 export const maxGap = (speed: number) => Math.min(64, airtime(TAP_ARC) * speed * 0.7);
-/** Free run between hazards: a full jump, landing and time to react. */
-export const minSpacing = (speed: number) => speed * (airtime(HELD_ARC) + 0.42) + 14;
+/**
+ * Free running time between one hazard passing the hero and the next one
+ * reaching it: room for a full held jump, the landing and a reaction.
+ */
+export const MIN_GAP_TIME = airtime(HELD_ARC) + REACT;
 
 /* --------------------------------------------------------------- world */
 
@@ -145,9 +157,16 @@ export class RunnerWorld {
   death: HazardKind | null = null;
   over = false;
   private dying = 0;
-  /** The most recent hazard; spacing is measured from its far edge as it scrolls. */
-  private last: Hazard | null = null;
+  /**
+   * Screen x of the far edge of the most recent hazard and that hazard's own
+   * speed. It keeps scrolling after the hazard leaves the screen, so spacing
+   * stays right however long the next gap is. Starts one screen ahead: a
+   * free run-up.
+   */
+  private lastEnd = VW;
+  private lastSpeed = 0;
   private next: HazardKind = 'bug';
+  /** Extra free seconds before the next hazard, for rhythm. */
   private nextExtra = 0;
 
   /** `best` is the best distance so far in metres, drawn as a marker. */
@@ -195,6 +214,7 @@ export class RunnerWorld {
     for (const o of this.obstacles) o.x -= dx + o.vx * dt;
     for (const g of this.gaps) g.x -= dx;
     for (const p of this.pickups) p.x -= dx;
+    this.lastEnd -= dx + this.lastSpeed * dt;
     this.obstacles = this.obstacles.filter((o) => o.x + o.w > -20);
     this.gaps = this.gaps.filter((g) => g.x + g.w > -20);
     this.pickups = this.pickups.filter((p) => p.x > -20 && !p.taken);
@@ -202,17 +222,17 @@ export class RunnerWorld {
 
   /* --------------------------------------------------------- generation */
 
+  /**
+   * Place the next hazard once it would enter the screen. Spacing is in
+   * time, not pixels: it must reach the hero at least MIN_GAP_TIME after the
+   * previous one has passed, counting both hazards' own speeds.
+   */
   private spawn() {
-    // before the first hazard there is a free run-up of one screen
-    const end = this.last ? this.last.x + this.last.w : VW - this.dist;
-    // a faster hazard closes in on the slower one ahead of it until the hero passes that one
-    const closing = Math.max(0, OWN_SPEED[this.next] - (this.last ? OWN_SPEED[this.last.kind] : 0));
-    const spacing = minSpacing(this.speed) + (closing * Math.max(0, end - HERO_X)) / this.speed + this.nextExtra;
-    const start = end + spacing;
-    if (start > VW + 16) return;
-    const x = Math.max(start, VW + 8);
-    if (spacing > 80 && Math.random() < 0.45) this.coinRow(end + spacing * 0.3, end + spacing * 0.7);
-    this.build(this.next, x);
+    const v = this.speed;
+    const passed = (this.lastEnd - HERO_X) / (v + this.lastSpeed); // negative once it is behind the hero
+    const x = HERO_X + (v + OWN_SPEED[this.next]) * (passed + MIN_GAP_TIME + this.nextExtra);
+    if (x > SPAWN_X + 8) return;
+    this.build(this.next, Math.max(x, SPAWN_X));
     this.plan();
   }
 
@@ -226,18 +246,25 @@ export class RunnerWorld {
     ];
     let roll = Math.random() * weights.reduce((s, [, w]) => s + w, 0);
     this.next = (weights.find(([, w]) => (roll -= w) < 0) ?? weights[0])[0];
-    this.nextExtra = rand(0, this.speed * 0.9);
+    this.nextExtra = rand(0, 0.9);
   }
 
   private build(kind: HazardKind, x: number) {
+    let end: number;
     if (kind === 'gap') {
-      const gap: Gap = { kind, x, w: Math.round(rand(16, Math.max(17, maxGap(this.speed)))) };
-      this.gaps.push(gap);
-      this.last = gap;
-      if (Math.random() < 0.6) this.coinArc(x + gap.w / 2, 18, 4);
-      return;
+      const w = Math.round(rand(16, Math.max(17, maxGap(this.speed))));
+      this.gaps.push({ kind, x, w });
+      end = x + w;
+      if (Math.random() < 0.6) this.coinArc(x + w / 2, 18, 4);
+    } else {
+      const o = kind === 'bug' ? this.bug(x) : kind === 'packet' ? this.packets(x) : this.stack(x);
+      end = o.x + o.w;
     }
-    this.last = kind === 'bug' ? this.bug(x) : kind === 'packet' ? this.packets(x) : this.stack(x);
+    this.lastEnd = end;
+    this.lastSpeed = OWN_SPEED[kind];
+    // the stretch after a hazard is always free for at least MIN_GAP_TIME: room for a coin row
+    const free = this.speed * MIN_GAP_TIME;
+    if (Math.random() < 0.45) this.coinRow(end + free * 0.3, end + free * 0.75);
   }
 
   private bug(x: number): Obstacle {
@@ -246,6 +273,7 @@ export class RunnerWorld {
     return o;
   }
 
+  /** Returns the last packet when they come in a pair. */
   private packets(x: number): Obstacle {
     // after a while packets can come in pairs: a longer duck
     const count = this.metres > 220 && Math.random() < 0.4 ? 2 : 1;
@@ -286,15 +314,15 @@ export class RunnerWorld {
     for (let i = 0; i < n; i++) {
       const t = half ? (i - half) / (half + 0.8) : 0;
       const exe = i === Math.floor(half) && Math.random() < 0.15;
-      this.pickups.push({ kind: exe ? 'exe' : 'coin', x: cx + (i - half) * 9, y: GROUND_Y - 5 - apex * (1 - t * t), taken: false });
+      this.pickups.push({ kind: exe ? 'exe' : 'coin', x: cx + (i - half) * 10, y: GROUND_Y - 5 - apex * (1 - t * t), taken: false });
     }
   }
 
   private coinRow(from: number, to: number) {
-    const n = Math.min(6, Math.floor((to - from) / 10));
+    const n = Math.min(6, Math.floor((to - from) / 12));
     const y = GROUND_Y - (Math.random() < 0.3 ? 20 : 5);
     for (let i = 0; i < n; i++)
-      this.pickups.push({ kind: Math.random() < 0.06 ? 'exe' : 'coin', x: from + i * 10, y, taken: false });
+      this.pickups.push({ kind: Math.random() < 0.06 ? 'exe' : 'coin', x: from + i * 12, y, taken: false });
   }
 
   /* --------------------------------------------------------------- hero */
@@ -307,7 +335,9 @@ export class RunnerWorld {
       Object.assign(h, { vy: -JUMP_V, grounded: false, jumping: true, coyote: 0, buffer: 0, holdT: 0 });
       this.hooks.sfx('blip');
     }
-    if (h.grounded && !this.groundUnder()) Object.assign(h, { grounded: false, jumping: false, vy: 0 });
+    // walked off an edge: the end of a stack, or into a gap
+    const floor = this.floorAt(h.y);
+    if (h.grounded && (floor === null || floor > h.y)) Object.assign(h, { grounded: false, jumping: false, vy: 0 });
     if (!h.grounded) {
       let g = GRAVITY;
       if (h.jumping && h.vy < 0 && input.jumpHeld && h.holdT < HOLD_MAX) {
@@ -318,24 +348,34 @@ export class RunnerWorld {
       const prev = h.y;
       h.vy += g * dt;
       h.y += h.vy * dt;
-      if (h.vy >= 0 && prev <= GROUND_Y && h.y >= GROUND_Y && this.groundUnder()) this.land();
+      const below = this.floorAt(prev);
+      if (h.vy >= 0 && below !== null && h.y >= below) this.land(below);
       else if (h.y > GROUND_Y + 2) this.die('gap');
     }
     h.ducking = h.grounded && input.duck;
     if (h.grounded) h.step += (dt * this.speed) / 9;
   }
 
-  private land() {
+  private land(y: number) {
     const h = this.hero;
-    if (h.vy > 140) this.burst(HERO_X + 3, GROUND_Y, 4, 't1', 30);
-    Object.assign(h, { y: GROUND_Y, vy: 0, grounded: true, jumping: false });
+    if (h.vy > 140) this.burst(HERO_X + 3, y, 4, 't1', 30);
+    Object.assign(h, { y, vy: 0, grounded: true, jumping: false });
   }
 
-  /** Is there ground under the hero's feet (not fully over a gap)? */
-  private groundUnder(): boolean {
+  /**
+   * The highest surface under the hero's feet that is not above `feet`:
+   * the top of a { } stack (it can be landed on), the ground, or null when
+   * the hero is wholly over a gap.
+   */
+  private floorAt(feet: number): number | null {
     const x0 = HERO_X + 1;
     const x1 = HERO_X + HERO.w - 1;
-    return !this.gaps.some((g) => x0 >= g.x && x1 <= g.x + g.w);
+    let floor = this.gaps.some((g) => x0 >= g.x && x1 <= g.x + g.w) ? null : GROUND_Y;
+    for (const o of this.obstacles) {
+      if (o.kind !== 'stack' || x1 <= o.x || x0 >= o.x + o.w || o.y < feet - 0.5) continue;
+      floor = floor === null ? o.y : Math.min(floor, o.y);
+    }
+    return floor;
   }
 
   heroBox(): { x: number; y: number; w: number; h: number } {
@@ -354,7 +394,8 @@ export class RunnerWorld {
       if (overlap(hit, { x: o.x + inset, y: o.y + inset, w: o.w - inset * 2, h: o.h - inset })) return this.die(o.kind);
     }
     for (const p of this.pickups) {
-      if (p.taken || !overlap(b, { x: p.x - 3, y: p.y - 4, w: 6, h: 8 })) continue;
+      const half = p.kind === 'exe' ? 6 : 3; // the chip is drawn wider than a coin
+      if (p.taken || !overlap(b, { x: p.x - half, y: p.y - 4, w: half * 2, h: 8 })) continue;
       p.taken = true;
       const points = p.kind === 'exe' ? EXE_POINTS : COIN_POINTS;
       if (p.kind === 'exe') this.exes++;

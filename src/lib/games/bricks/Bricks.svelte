@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import type { GameApi } from '../../core/types';
-  import { fitCanvas, heldKeys, readPalette, startLoop, watchPalette, type Palette } from '../kit';
+  import { clamp, fitCanvas, heldKeys, readPalette, startLoop, watchPalette, type Palette } from '../kit';
   import { drawBricks } from './draw';
-  import { BricksGame, VH, VW } from './engine';
+  import { BricksGame, MAX_VH, MIN_VH, VW } from './engine';
 
   export let paused = true;
   export let api: GameApi;
@@ -39,14 +39,15 @@
   }
   let drag: Drag | null = null;
 
+  /** Pointer x in virtual px; presses beside a letterboxed canvas still steer. */
   function virtualX(e: PointerEvent): number {
     const r = canvas.getBoundingClientRect();
-    return ((e.clientX - r.left) / Math.max(1, r.width)) * VW;
+    return clamp(((e.clientX - r.left) / Math.max(1, r.width)) * VW, 0, VW);
   }
 
   function onPointerDown(e: PointerEvent) {
     if (paused || drag || e.button > 0) return;
-    canvas.setPointerCapture?.(e.pointerId);
+    stage.setPointerCapture?.(e.pointerId);
     drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), x: virtualX(e), active: false };
   }
 
@@ -65,7 +66,11 @@
 
   /* ------------------------------------------------------------ loop */
 
+  /** Game time in ms for animations (capsule blink, launch hint, shake); it stops while paused. */
+  let clock = 0;
+
   function update(dt: number) {
+    clock += dt * 1000;
     if (drag && !drag.active && performance.now() - drag.t0 >= TAP_MS) drag.active = true;
     const dir = (keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0);
     game.update(dt, { dir, targetX: drag?.active ? drag.x : null, fire: keys.has('KeyJ') });
@@ -77,14 +82,19 @@
   let h = 0;
   let ctx: CanvasRenderingContext2D | null = null;
   let pal: Palette | null = null;
-  $: if (canvas && w && h) ctx = fitCanvas(canvas, w, h, VW, VH);
+  /** Field height that matches the stage's shape, within the engine's limits. */
+  $: vh = w && h ? clamp(Math.round((VW * h) / w), MIN_VH, MAX_VH) : MIN_VH;
+  $: game.resize(vh);
+  $: if (canvas && w && h) ctx = fitCanvas(canvas, w, h, VW, vh);
+  /** CSS px per virtual px, so the HUD can keep its text readable in small panes. */
+  $: scale = w && h ? Math.min(w / VW, h / vh) : 3;
   $: if (paused) {
     keys.clear();
     drag = null;
   }
 
   function draw() {
-    if (ctx && pal) drawBricks(ctx, game, pal, performance.now());
+    if (ctx && pal) drawBricks(ctx, game, pal, clock, scale);
   }
 
   let stopLoop: (() => void) | undefined;
@@ -101,15 +111,18 @@
   });
 </script>
 
-<div class="bricks-stage" bind:this={stage} bind:clientWidth={w} bind:clientHeight={h}>
-  <canvas
-    bind:this={canvas}
-    on:pointerdown={onPointerDown}
-    on:pointermove={onPointerMove}
-    on:pointerup={onPointerUp}
-    on:pointercancel={() => (drag = null)}
-    on:contextmenu|preventDefault
-  />
+<div
+  class="bricks-stage"
+  bind:this={stage}
+  bind:clientWidth={w}
+  bind:clientHeight={h}
+  on:pointerdown={onPointerDown}
+  on:pointermove={onPointerMove}
+  on:pointerup={onPointerUp}
+  on:pointercancel={() => (drag = null)}
+  on:contextmenu|preventDefault
+>
+  <canvas bind:this={canvas} />
 </div>
 
 <style>
@@ -119,8 +132,6 @@
     display: grid;
     place-items: center;
     overflow: hidden;
-  }
-  canvas {
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
