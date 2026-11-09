@@ -2,8 +2,10 @@
   import { get } from 'svelte/store';
   import { cycleTheme } from './lib/core/theme';
   import { overlays } from './lib/core/registry';
-  import { templatePickerOpen } from './lib/core/ui';
+  import { openOverlay, templatePickerOpen } from './lib/core/ui';
   import { toggleRadio } from './lib/widgets/radio/player';
+  import { onMount } from 'svelte';
+  import { startReminders } from './lib/core/reminders';
   import {
     closePane,
     focusNeighbour,
@@ -48,6 +50,10 @@
       case 'KeyP':
         handled();
         toggleRadio();
+        return;
+      case 'Slash':
+        handled();
+        openOverlay.set('keys');
         return;
       case 'Backslash':
       case 'Enter':
@@ -99,6 +105,8 @@
       }
     }
   }
+
+  onMount(startReminders);
 </script>
 
 <svelte:window on:keydown|capture={onKeyDown} />

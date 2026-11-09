@@ -4,15 +4,22 @@
 
   /** Diameter in px. */
   export let size = 200;
+  /**
+   * 24-hour face: the hour hand goes round once a day, with 24 / 6 / 12 / 18
+   * at the quarters and a dot for every hour. The 12-hour face shows AM / PM.
+   */
+  export let hour24 = false;
 
   const C = 100;
   const TICKS = Array.from({ length: 60 }, (_, i) => i);
-  const NUMERALS = [
-    { n: 12, x: C, y: 36 },
-    { n: 3, x: 164, y: C },
-    { n: 6, x: C, y: 164 },
-    { n: 9, x: 36, y: C },
+  const HOURS24 = Array.from({ length: 24 }, (_, i) => i);
+  const quarters = (labels: number[]) => [
+    { n: labels[0], x: C, y: 36 },
+    { n: labels[1], x: 164, y: C },
+    { n: labels[2], x: C, y: 164 },
+    { n: labels[3], x: 36, y: C },
   ];
+  $: NUMERALS = hour24 ? quarters([24, 6, 12, 18]) : quarters([12, 3, 6, 9]);
 
   let t = Date.now();
   let raf = 0;
@@ -45,11 +52,14 @@
   $: d = new Date(t);
   $: seconds = d.getSeconds() + (smooth ? d.getMilliseconds() / 1000 : 0);
   $: minutes = d.getMinutes() + seconds / 60;
-  $: hours = (d.getHours() % 12) + minutes / 60;
+  $: hours = hour24 ? d.getHours() + minutes / 60 : (d.getHours() % 12) + minutes / 60;
+  // one turn is 12 hours, or 24 on the 24-hour face
+  $: hourDeg = hours * (hour24 ? 15 : 30);
+  $: period = d.getHours() < 12 ? 'AM' : 'PM';
   $: numerals = size >= 150;
   // the label only changes once a minute, so do not format it every frame
   $: minute = Math.floor(t / 60_000);
-  $: label = new Date(minute * 60_000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  $: label = new Date(minute * 60_000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: !hour24 });
 </script>
 
 <svg class="dial-face" viewBox="0 0 200 200" width={size} height={size} role="img" aria-label="Analog clock {label}">
@@ -57,12 +67,18 @@
   {#each TICKS as i}
     <line class="mark" class:mark-hour={i % 5 === 0} x1={C} y1="9" x2={C} y2={i % 5 === 0 ? 21 : 14} transform="rotate({i * 6} {C} {C})" />
   {/each}
+  {#if hour24}
+    {#each HOURS24 as i}
+      <circle class="hour-dot" class:hour-dot-q={i % 6 === 0} cx={C} cy="50" r={i % 6 === 0 ? 2.2 : 1.4} transform="rotate({i * 15} {C} {C})" />
+    {/each}
+  {/if}
   {#if numerals}
     {#each NUMERALS as m}
       <text class="numeral" x={m.x} y={m.y} text-anchor="middle" dominant-baseline="central">{m.n}</text>
     {/each}
+    <text class="period" x={C} y="134" text-anchor="middle" dominant-baseline="central">{hour24 ? '24h' : period}</text>
   {/if}
-  <line class="hand-hour" x1={C} y1="112" x2={C} y2="54" transform="rotate({hours * 30} {C} {C})" />
+  <line class="hand-hour" x1={C} y1="112" x2={C} y2="54" transform="rotate({hourDeg} {C} {C})" />
   <line class="hand-minute" x1={C} y1="116" x2={C} y2="28" transform="rotate({minutes * 6} {C} {C})" />
   <g transform="rotate({seconds * 6} {C} {C})">
     <line class="hand-second" x1={C} y1="126" x2={C} y2="18" />
@@ -97,6 +113,18 @@
     font-size: 15px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+  }
+  .period {
+    fill: var(--t1);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+  }
+  .hour-dot {
+    fill: color-mix(in srgb, var(--t1) 70%, transparent);
+  }
+  .hour-dot-q {
+    fill: var(--hl1);
   }
   .hand-hour,
   .hand-minute {

@@ -118,7 +118,7 @@ radioState.subscribe((s) => {
   if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
   const ms = navigator.mediaSession;
   if (typeof MediaMetadata !== 'undefined') {
-    ms.metadata = new MediaMetadata({ title: s.station.name, artist: 'SomaFM', album: 'Radio' });
+    ms.metadata = new MediaMetadata({ title: s.station.name, artist: 'Radio', album: s.station.note });
   }
   ms.playbackState = s.status === 'playing' || s.status === 'connecting' ? 'playing' : 'paused';
   ms.setActionHandler('play', play);

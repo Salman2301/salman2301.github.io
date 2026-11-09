@@ -5,7 +5,7 @@ import { pause, tune } from '../widgets/radio/player';
 
 const command: CommandDef = {
   name: 'radio',
-  description: 'tune in to a free SomaFM station, or stop the radio',
+  description: 'tune in to a free live radio station, or stop the radio',
   usage: 'radio [<station>|list|stop]',
   group: 'widgets',
   complete: (args) => (args.length <= 1 ? [...STATIONS.map((s) => s.slug), 'list', 'stop'] : []),

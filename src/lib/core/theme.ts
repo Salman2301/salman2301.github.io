@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store';
-import { load, save } from './storage';
+import { applyFavicon } from './favicon';
+import { load, persisted } from './storage';
 
 /**
  * Every theme is five colours, exposed as CSS variables:
@@ -28,28 +29,88 @@ export const themes = {
   'solarized-light': ['#fdf6e3', '#e4ddc8', '#cb4b16', '#657b83', '#073642'],
   matrix: ['#000800', '#0b3d0b', '#00ff41', '#2e8b57', '#b6ffb6'],
   synthwave: ['#1a1033', '#3b2a5c', '#ff7edb', '#9a8cc2', '#f4eeff'],
+  // Popular VS Code themes, from their published palettes.
+  'one-dark-pro': ['#282c34', '#3e4451', '#61afef', '#7f848e', '#abb2bf'],
+  'github-dark': ['#0d1117', '#30363d', '#58a6ff', '#8b949e', '#c9d1d9'],
+  'github-light': ['#ffffff', '#d0d7de', '#0969da', '#57606a', '#24292f'],
+  'night-owl': ['#011627', '#1d3b53', '#c792ea', '#5f7e97', '#d6deeb'],
+  'monokai-pro': ['#2d2a2e', '#403e41', '#ffd866', '#939293', '#fcfcfa'],
+  'ayu-dark': ['#0b0e14', '#273747', '#e6b450', '#6c7380', '#bfbdb6'],
+  'ayu-light': ['#fcfcfc', '#e1e3e6', '#fa8d3e', '#8a9199', '#5c6166'],
+  palenight: ['#292d3e', '#444267', '#c792ea', '#8796b0', '#bfc7d5'],
+  cobalt2: ['#193549', '#1f4662', '#ffc600', '#9eb7cc', '#ffffff'],
+  'shades-of-purple': ['#2d2b55', '#4d4a8a', '#fad000', '#a599e9', '#ffffff'],
 } as const;
 
 export type ThemeName = keyof typeof themes;
 export const themeNames = Object.keys(themes) as ThemeName[];
 
-const KEY = 'theme';
+function isLight(hex: string) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return r * 0.299 + g * 0.587 + b * 0.114 > 150;
+}
 
-function initial(): ThemeName {
-  const stored = load<string>(KEY, '');
-  if (stored in themes) return stored as ThemeName;
-  // migrate the old key used before the rewrite: "theme <name>"
+/** Light or dark, from the theme's background. */
+export const kindOf = (name: ThemeName): 'light' | 'dark' => (isLight(themes[name][0]) ? 'light' : 'dark');
+export const darkThemes = themeNames.filter((n) => kindOf(n) === 'dark');
+export const lightThemes = themeNames.filter((n) => kindOf(n) === 'light');
+
+/* ------------------------------------------------------- mode and picks */
+
+/**
+ * The mode says which of two remembered themes is shown: "system" follows
+ * the OS light / dark setting, "dark" and "light" force one. Picking a theme
+ * makes it the dark or the light pick, by its background.
+ */
+export type ThemeMode = 'system' | 'dark' | 'light';
+export const THEME_MODES: ThemeMode[] = ['system', 'dark', 'light'];
+
+const isName = (v: unknown): v is ThemeName => typeof v === 'string' && v in themes;
+
+// Before modes there was one saved theme (and before that "curr-theme").
+function legacyTheme(): ThemeName | null {
+  const stored = load<string>('theme', '');
+  if (isName(stored)) return stored;
   try {
-    const legacy = localStorage.getItem('curr-theme');
-    const name = legacy?.split(' ')[1];
-    if (name && name in themes) return name as ThemeName;
+    const name = localStorage.getItem('curr-theme')?.split(' ')[1];
+    if (isName(name)) return name;
   } catch {
     /* ignore */
   }
-  return 'default-dark';
+  return null;
 }
 
-export const themeStore = writable<ThemeName>(initial());
+const legacy = legacyTheme();
+export const themeMode = persisted<ThemeMode>('theme:mode', legacy ? kindOf(legacy) : 'system');
+export const darkTheme = persisted<ThemeName>('theme:dark', legacy && kindOf(legacy) === 'dark' ? legacy : 'default-dark');
+export const lightTheme = persisted<ThemeName>('theme:light', legacy && kindOf(legacy) === 'light' ? legacy : 'default-light');
+
+const osDark = typeof matchMedia !== 'undefined' ? matchMedia('(prefers-color-scheme: dark)') : null;
+const systemKind = (): 'dark' | 'light' => (osDark && !osDark.matches ? 'light' : 'dark');
+
+function effective(): ThemeName {
+  const mode = get(themeMode);
+  const kind = mode === 'system' ? systemKind() : mode;
+  const pick = kind === 'dark' ? get(darkTheme) : get(lightTheme);
+  if (isName(pick) && kindOf(pick) === kind) return pick;
+  return kind === 'dark' ? 'default-dark' : 'default-light';
+}
+
+/** The theme on screen. Read it anywhere; change it with setTheme or setThemeMode. */
+export const themeStore = writable<ThemeName>(effective());
+
+function refresh() {
+  const next = effective();
+  if (get(themeStore) !== next) themeStore.set(next);
+}
+
+themeMode.subscribe(refresh);
+darkTheme.subscribe(refresh);
+lightTheme.subscribe(refresh);
+osDark?.addEventListener('change', refresh);
 
 export function applyTheme(name: ThemeName) {
   const [bg1, bg2, hl1, t1, t2] = themes[name];
@@ -60,40 +121,49 @@ export function applyTheme(name: ThemeName) {
   s.setProperty('--t1', t1);
   s.setProperty('--t2', t2);
   document.documentElement.style.colorScheme = isLight(bg1) ? 'light' : 'dark';
+  applyFavicon(bg1, hl1);
 }
 
-function isLight(hex: string) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  return r * 0.299 + g * 0.587 + b * 0.114 > 150;
-}
+themeStore.subscribe(applyTheme);
 
-themeStore.subscribe((name) => {
-  applyTheme(name);
-  save(KEY, name);
-});
-
+/**
+ * Show a theme: it becomes the dark or the light pick. "system" mode stays
+ * on when the OS is already showing that kind; otherwise the mode switches
+ * to the theme's kind so it is visible.
+ */
 export function setTheme(name: string): boolean {
-  if (!(name in themes)) return false;
-  themeStore.set(name as ThemeName);
+  if (!isName(name)) return false;
+  const kind = kindOf(name);
+  (kind === 'dark' ? darkTheme : lightTheme).set(name);
+  if (!(get(themeMode) === 'system' && systemKind() === kind)) themeMode.set(kind);
   return true;
 }
 
+export function setThemeMode(mode: ThemeMode) {
+  themeMode.set(mode);
+}
+
+/** system → dark → light → system. Returns the new mode. */
+export function cycleThemeMode(): ThemeMode {
+  const next = THEME_MODES[(THEME_MODES.indexOf(get(themeMode)) + 1) % THEME_MODES.length];
+  themeMode.set(next);
+  return next;
+}
+
 /**
- * Move to the next theme, or a random one (never the current one).
- * Alt+Y uses next, Alt+Shift+Y random.
+ * Move to the next theme of the same kind (dark or light), or a random one
+ * of that kind (never the current one). Alt+Y uses next, Alt+Shift+Y random.
  */
 export function cycleTheme(random = false): ThemeName {
   const current = get(themeStore);
+  const pool = kindOf(current) === 'dark' ? darkThemes : lightThemes;
   let name: ThemeName;
   if (random) {
-    const others = themeNames.filter((n) => n !== current);
-    name = others[Math.floor(Math.random() * others.length)];
+    const others = pool.filter((n) => n !== current);
+    name = others[Math.floor(Math.random() * others.length)] ?? current;
   } else {
-    name = themeNames[(themeNames.indexOf(current) + 1) % themeNames.length];
+    name = pool[(pool.indexOf(current) + 1) % pool.length];
   }
-  themeStore.set(name);
+  setTheme(name);
   return name;
 }

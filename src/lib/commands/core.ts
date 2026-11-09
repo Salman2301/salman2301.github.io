@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import type { CommandDef } from '../core/types';
-import { setTheme, themeNames, themeStore } from '../core/theme';
+import { cycleTheme, setTheme, setThemeMode, THEME_MODES, themeNames, type ThemeMode } from '../core/theme';
 import { soundEnabled } from '../core/sound';
 import { commandHistory } from '../terminal/context';
 import Help from '../terminal/output/Help.svelte';
@@ -82,20 +82,19 @@ const commands: CommandDef[] = [
   {
     name: 'theme',
     aliases: ['themes'],
-    description: 'list themes or switch: theme tokyo-night',
-    usage: 'theme [name|next|random]',
+    description: 'list themes or switch: theme tokyo-night, theme system|dark|light',
+    usage: 'theme [name|next|random|system|dark|light]',
     group: 'system',
-    complete: () => [...themeNames, 'next', 'random'],
+    complete: () => [...THEME_MODES, 'next', 'random', ...themeNames],
     run: (ctx) => {
       const name = ctx.args[0];
       if (!name) return ctx.render(ThemeList);
+      if ((THEME_MODES as string[]).includes(name)) {
+        setThemeMode(name as ThemeMode);
+        return ctx.print(name === 'system' ? 'theme follows your system light / dark setting' : `theme mode: ${name}`, 'muted');
+      }
       if (name === 'next' || name === 'random') {
-        const current = themeNames.indexOf(get(themeStore));
-        const next =
-          name === 'next'
-            ? themeNames[(current + 1) % themeNames.length]
-            : themeNames[Math.floor(Math.random() * themeNames.length)];
-        setTheme(next);
+        const next = cycleTheme(name === 'random');
         return ctx.print(`theme: ${next}`, 'muted');
       }
       if (!setTheme(name)) ctx.print(`theme "${name}" not found. Type "theme" to list them.`, 'error');

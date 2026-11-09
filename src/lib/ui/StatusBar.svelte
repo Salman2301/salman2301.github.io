@@ -3,7 +3,7 @@
   import { getWidget } from '../core/registry';
   import { statusItems } from '../core/status';
   import { findTemplate } from '../core/templates';
-  import { setTheme, themeNames, themeStore } from '../core/theme';
+  import { cycleThemeMode, darkThemes, lightThemes, setTheme, themeMode, themeStore } from '../core/theme';
   import { templatePickerOpen } from '../core/ui';
   import { focusPane, leaves, workspace } from '../core/workspace';
   import ClockPanel from './ClockPanel.svelte';
@@ -41,10 +41,28 @@
     {/if}
   {/each}
   <MusicControl />
+  <button
+    class="seg mode"
+    on:click={cycleThemeMode}
+    title="Theme mode: {$themeMode}{$themeMode === 'system' ? ' (follows your OS)' : ''}. Click for {$themeMode === 'system' ? 'dark' : $themeMode === 'dark' ? 'light' : 'system'}."
+    aria-label="Theme mode: {$themeMode}"
+  >
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      {#if $themeMode === 'system'}
+        <rect x="2" y="3" width="12" height="8.5" rx="1.2" /><path d="M6 14h4M8 11.5V14" />
+      {:else if $themeMode === 'dark'}
+        <path d="M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6Z" />
+      {:else}
+        <circle cx="8" cy="8" r="3" /><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+      {/if}
+    </svg>
+    <span class="mode-label">{$themeMode}</span>
+  </button>
   <label class="seg theme" title="Theme (or type: theme <name>)">
     <span class="theme-label">theme</span>
     <select aria-label="Theme" value={$themeStore} on:change={(e) => setTheme(e.currentTarget.value)}>
-      {#each themeNames as name}<option value={name}>{name}</option>{/each}
+      <optgroup label="dark">{#each darkThemes as name}<option value={name}>{name}</option>{/each}</optgroup>
+      <optgroup label="light">{#each lightThemes as name}<option value={name}>{name}</option>{/each}</optgroup>
     </select>
   </label>
   <button class="seg clock" data-clock-toggle class:open={clockOpen} aria-expanded={clockOpen} title="Clock, calendar and timer" on:click={() => (clockOpen = !clockOpen)}>
@@ -133,6 +151,22 @@
   .clock:hover {
     color: var(--hl1);
   }
+  .mode {
+    gap: 5px;
+    border-left: 1px solid color-mix(in srgb, var(--bg2) 80%, transparent);
+  }
+  .mode svg {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .mode-label {
+    font-size: 11px;
+  }
   .theme {
     gap: 6px;
     padding: 0 6px 0 10px;
@@ -163,6 +197,7 @@
   @media (max-width: 720px) {
     .windows,
     .theme-label,
+    .mode-label,
     .clock .day {
       display: none;
     }

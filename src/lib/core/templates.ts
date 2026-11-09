@@ -56,7 +56,7 @@ export const builtinTemplates: TemplateDef[] = [
   {
     id: 'study',
     title: 'Study Radio',
-    description: 'Ambient radio, pomodoro and markdown notes.',
+    description: 'Live radio, pomodoro and markdown notes.',
     build: () => row([col([leaf('radio'), leaf('pomodoro')], [0.6, 0.4]), leaf('notes')], [0.55, 0.45]),
   },
   {

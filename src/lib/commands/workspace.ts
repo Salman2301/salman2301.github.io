@@ -6,6 +6,7 @@ import { templatePickerOpen } from '../core/ui';
 import { notify } from '../core/notify';
 import {
   closePane,
+  closeTab,
   focusPane,
   leaf,
   leaves,
@@ -15,6 +16,7 @@ import {
   toggleMaximize,
   workspace,
 } from '../core/workspace';
+import WidgetList from '../terminal/output/WidgetList.svelte';
 
 const widgetIds = () => widgets.filter((w) => !w.hidden).map((w) => w.id);
 
@@ -71,27 +73,18 @@ const commands: CommandDef[] = [
   {
     name: 'open',
     aliases: ['widget', 'new'],
-    description: 'open a widget in a new pane: open notes',
-    usage: 'open <widget> [--here]',
+    description: 'open a widget in this terminal: open notes (--new opens a separate pane)',
+    usage: 'open <widget> [--new]',
     group: 'workspace',
-    complete: (args) => (args.length <= 1 ? widgetIds() : ['--here', '--new']),
+    complete: (args) => (args.length <= 1 ? widgetIds() : ['--new']),
     run: (ctx) => {
       const id = ctx.args[0];
-      if (!id) {
-        return ctx.print(
-          'widgets:\n' +
-            widgets
-              .filter((w) => !w.hidden)
-              .map((w) => `  ${w.icon.padEnd(2)} ${w.id.padEnd(10)} ${w.description}`)
-              .join('\n') +
-            '\nusage: open <widget>   (--here replaces this terminal, --new always opens another)',
-        );
-      }
+      if (!id) return ctx.render(WidgetList);
       const def = getWidget(id);
       if (!def) return ctx.print(`no widget "${id}". Type "open" to list them.`, 'error');
-      const here = ctx.args.includes('--here');
+      // Default: the widget takes over this terminal's pane. --new splits off another pane.
       const fresh = ctx.args.includes('--new');
-      openWidget(def.id, def.defaultConfig, { from: ctx.paneId, replace: here, reuse: !here && !fresh && def.id !== 'terminal' });
+      openWidget(def.id, def.defaultConfig, { from: ctx.paneId, replace: !fresh, reuse: false });
     },
   },
   {
@@ -123,9 +116,17 @@ const commands: CommandDef[] = [
   {
     name: 'exit',
     aliases: ['close', 'quit'],
-    description: 'close this pane (alt+w)',
+    description: 'close this pane; the last pane closes its tab, and the last tab closes the window',
     group: 'workspace',
-    run: (ctx) => closePane(ctx.paneId),
+    run: (ctx) => {
+      const s = get(workspace);
+      if (leaves(s.root).length > 1) return closePane(ctx.paneId);
+      if (s.tabs.length > 1) return void closeTab(s.active);
+      // Last pane of the only tab: close the window. Browsers only allow this for windows
+      // the page did not open, so say what to do when they refuse.
+      window.close();
+      ctx.print('this browser blocked the window from closing itself. Close the tab to leave.', 'muted');
+    },
   },
   {
     name: 'max',

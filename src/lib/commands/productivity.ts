@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import type { CommandDef } from '../core/types';
-import { activeTaskId, addTask, clearDone, removeTask, setActiveTask, tasks, toggleTask } from '../core/tasks';
+import { activeTaskId, addTask, clearDone, removeTask, setActiveTask, taskByNo, tasks, toggleTask } from '../core/tasks';
 import { openWidget } from '../core/workspace';
 import {
   fmt, MODE_LABEL, pause, pomodoro, pomodoroStats, remainingMs, reset, setDurations, skip, start, todayKey,
@@ -48,13 +48,11 @@ const commands: CommandDef[] = [
     description: 'task list: add, done, rm, focus, ls, clear',
     usage: 'todo [add <text>|done <n>|undo <n>|rm <n>|focus <n>|ls|clear]',
     group: 'widgets',
-    complete: (args) => (args.length <= 1 ? ['add', 'done', 'undo', 'rm', 'focus', 'ls', 'clear'] : get(tasks).map((_, i) => String(i + 1))),
+    complete: (args) => (args.length <= 1 ? ['add', 'done', 'undo', 'rm', 'focus', 'ls', 'clear'] : get(tasks).map((t) => String(t.no))),
     run: (ctx) => {
       const [sub, ...rest] = ctx.args;
-      const list = get(tasks);
       const pick = () => {
-        const n = Number(rest[0]);
-        const t = list[n - 1];
+        const t = taskByNo(Number(rest[0]));
         if (!t) ctx.print(`no task #${rest[0] ?? ''}. Try: todo ls`, 'error');
         return t;
       };
@@ -64,7 +62,7 @@ const commands: CommandDef[] = [
         const active = get(activeTaskId);
         ctx.print(
           all
-            .map((t, i) => `${String(i + 1).padStart(3)}  [${t.done ? 'x' : ' '}] ${t.text}${t.pomodoros ? `  (${t.pomodoros}p)` : ''}${t.id === active ? '  <- focus' : ''}`)
+            .map((t) => `${String(t.no).padStart(3)}  [${t.done ? 'x' : ' '}] ${t.text}${t.pomodoros ? `  (${t.pomodoros}p)` : ''}${t.id === active ? '  <- focus' : ''}`)
             .join('\n'),
         );
       };
@@ -72,7 +70,7 @@ const commands: CommandDef[] = [
       if (sub === 'ls' || sub === 'list') return ls();
       if (sub === 'add') {
         const t = addTask(rest.join(' '));
-        return t ? ctx.print(`added #${get(tasks).length}: ${t.text}`, 'success') : ctx.print('usage: todo add <text>', 'error');
+        return t ? ctx.print(`added #${t.no}: ${t.text}`, 'success') : ctx.print('usage: todo add <text>', 'error');
       }
       if (sub === 'clear') return clearDone(), ctx.print('cleared finished tasks', 'muted');
       if (['done', 'undo', 'rm', 'focus'].includes(sub)) {
@@ -85,7 +83,7 @@ const commands: CommandDef[] = [
       }
       // "todo buy milk" adds directly
       const t = addTask(ctx.args.join(' '));
-      if (t) ctx.print(`added #${get(tasks).length}: ${t.text}`, 'success');
+      if (t) ctx.print(`added #${t.no}: ${t.text}`, 'success');
     },
   },
   {
