@@ -11,7 +11,7 @@ const find = (needle: string) => {
 
 const command: CommandDef = {
   name: 'tab',
-  aliases: ['tabs', 'window', 'windows'],
+  aliases: ['tabs', 'window'],
   description: 'tabs (zellij-style windows): list, new, go, next, prev, rename, close',
   usage: 'tab [list | new [name] | go <n|name> | next | prev | rename <name> | close [n|name]]',
   group: 'workspace',
