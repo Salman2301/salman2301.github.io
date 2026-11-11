@@ -112,7 +112,8 @@ export const SHORTCUTS: ShortcutGroup[] = [
     title: 'Clock',
     where: 'with the clock focused',
     items: [
-      { keys: [['A']], does: 'digital / analog' },
+      { keys: [['F']], does: 'the gallery of faces' },
+      { keys: [[']'], ['[']], does: 'next / previous face (also the arrow keys, or A for next)' },
       { keys: [['H']], does: '12h / 24h (digital)' },
     ],
   },

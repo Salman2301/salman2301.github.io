@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Config } from '../../core/types';
-  import Dial from './Dial.svelte';
+  import FaceView from './FaceView.svelte';
+  import { DEFAULT_FACE, FACES, findFace, stepFace, type FaceDef } from './faces';
   import { secondTick } from './ticker';
   import {
     allZones, cityName, describeZone, formatUtcOffset, isValidZone, localZone, prefers12h, resolveZone, utcOffset,
@@ -12,10 +13,11 @@
   export let config: Config = {};
   export let updateConfig: (patch: Config) => void = () => {};
 
-  type Face = 'digital' | 'analog';
   const MAX_ZONES = 24;
 
-  $: face = (config.face === 'analog' ? 'analog' : 'digital') as Face;
+  let def: FaceDef = DEFAULT_FACE;
+  $: def = findFace(config.face) ?? DEFAULT_FACE;
+  $: face = def.id;
   $: hour12 = typeof config.hour12 === 'boolean' ? config.hour12 : prefers12h();
   $: zones = readZones(config.zones);
 
@@ -33,6 +35,9 @@
   let error = '';
   /** Showing the world clock header and the add box ("cities" in the footer). */
   let editingZones = false;
+  /** Showing the gallery of faces instead of the clock. */
+  let picking = false;
+  let gallery: HTMLDivElement;
 
   // Breakpoints: tiny shows only the time, medium adds the date and the face
   // switches (plus a one-line strip of world times when there is height for
@@ -43,33 +48,50 @@
   $: strip = !tiny && !roomy && zones.length > 0 && h >= 200;
 
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-  const pad = (n: number) => String(n).padStart(2, '0');
 
   $: dateSize = clamp(fw * 0.034, 11, 18);
-  $: dateSpace = tiny ? 0 : dateSize * 1.4 + 10 + (strip ? 28 : 0);
-  // "88:88" in tabular digits is about 3em wide, plus the small AM / PM
-  $: fontSize = clamp(Math.min((fw - 8) / (hour12 ? 3.4 : 3.1), (fh - dateSpace) / 1.08), 16, 280);
-  $: dialSize = clamp(Math.min(fw - 8, fh - dateSpace - 4), 48, 520);
+  $: showDate = !tiny && !def.ownDate;
+  $: dateSpace = (showDate ? dateSize * 1.4 + 10 : 0) + (strip ? 28 : 0);
+  // the box the face may fill
+  $: faceW = Math.max(40, fw - 8);
+  $: faceH = Math.max(40, fh - dateSpace - 4);
 
   $: now = $secondTick;
-  $: hours = now.getHours();
-  $: hh = hour12 ? String(hours % 12 || 12) : pad(hours);
-  $: mm = pad(now.getMinutes());
-  $: period = hours < 12 ? 'AM' : 'PM';
   $: dateText = now.toLocaleDateString(
     undefined,
     fw < 360 ? { weekday: 'short', day: 'numeric', month: 'short' } : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' },
   );
-  // 12h / 24h is a digital-only choice: the analog dial is always 12 hours.
-  $: rows = roomy || strip ? zones.map((z) => describeZone(z, now, face === 'analog' || hour12)) : [];
+  // 12h / 24h only applies to faces that show the hour as digits; a dial is 12 hours.
+  $: rows = roomy || strip ? zones.map((z) => describeZone(z, now, def.kind === 'analog' || hour12)) : [];
   // Zen by default: the world clocks appear once a city is added, the add box on request.
   $: showWorld = roomy && (zones.length > 0 || editingZones);
   $: here = localZone();
   $: hereLabel = `${cityName(here)} · ${formatUtcOffset(utcOffset(here, now))}`;
   $: zoneOptions = roomy ? allZones() : [];
 
-  function setFace(next: Face) {
+  function setFace(next: string) {
     if (next !== face) updateConfig({ face: next });
+  }
+  function chooseFace(next: string) {
+    setFace(next);
+    picking = false;
+    keepFocus();
+  }
+  function togglePicker() {
+    picking = !picking;
+    if (picking) tick().then(() => gallery?.querySelector<HTMLElement>('[aria-pressed="true"]')?.scrollIntoView({ block: 'center' }));
+    else keepFocus();
+  }
+  /** Arrow keys walk the gallery's grid. */
+  function onGalleryKey(e: KeyboardEvent) {
+    const tiles = Array.from(gallery.querySelectorAll<HTMLElement>('.tile'));
+    const at = tiles.indexOf(document.activeElement as HTMLElement);
+    if (at < 0) return;
+    const perRow = Math.max(1, tiles.filter((t) => t.offsetTop === tiles[0].offsetTop).length);
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: perRow, ArrowUp: -perRow }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    tiles[Math.max(0, Math.min(tiles.length - 1, at + step))]?.focus();
   }
   function setHour12(next: boolean) {
     updateConfig({ hour12: next });
@@ -96,8 +118,12 @@
   function onKey(e: KeyboardEvent) {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     if ((e.target as HTMLElement).closest('input, textarea, select')) return;
-    if (e.code === 'KeyA') setFace(face === 'analog' ? 'digital' : 'analog');
-    else if (e.code === 'KeyH' && face === 'digital') setHour12(!hour12);
+    if (e.code === 'Escape' && picking) togglePicker();
+    else if (picking) return;
+    else if (e.code === 'KeyF') togglePicker();
+    else if (e.code === 'KeyA' || e.code === 'BracketRight' || e.code === 'ArrowRight') setFace(stepFace(face, 1).id);
+    else if (e.code === 'BracketLeft' || e.code === 'ArrowLeft') setFace(stepFace(face, -1).id);
+    else if (e.code === 'KeyH' && def.hours) setHour12(!hour12);
     else return;
     e.preventDefault();
   }
@@ -127,17 +153,21 @@
   tabindex="0"
   on:keydown={onKey}
 >
-  <div class="clock-body">
+  {#if picking}
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="gallery" bind:this={gallery} role="group" aria-label="Clock faces" on:keydown={onGalleryKey}>
+      {#each FACES as f (f.id)}
+        <button class="tile" aria-pressed={f.id === face} title={f.note} on:click={() => chooseFace(f.id)}>
+          <span class="thumb" aria-hidden="true"><FaceView face={f.id} {now} {hour12} w={f.kind === 'analog' ? 68 : 104} h={68} preview /></span>
+          <span class="tile-name">{f.name}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
+  <div class="clock-body" hidden={picking}>
     <div class="face-area" bind:clientWidth={fw} bind:clientHeight={fh}>
-      {#if face === 'analog'}
-        <Dial size={dialSize} />
-      {:else}
-        <div class="readout" style="font-size:{fontSize}px" role="timer" aria-label="{hh}:{mm}{hour12 ? ` ${period}` : ''}">
-          <span class="hm">{hh}<span class="colon">:</span>{mm}</span>
-          {#if hour12}<span class="period">{period}</span>{/if}
-        </div>
-      {/if}
-      {#if !tiny}
+      {#if !picking}<FaceView {face} {now} {hour12} w={faceW} h={faceH} />{/if}
+      {#if showDate}
         <p class="date" style="font-size:{dateSize}px">{dateText}</p>
       {/if}
       {#if strip}
@@ -203,17 +233,18 @@
 
   {#if !tiny}
     <footer class="clock-bar">
-      <div class="seg" role="group" aria-label="Clock face">
-        <button aria-pressed={face === 'digital'} on:click={() => setFace('digital')}>digital</button>
-        <button aria-pressed={face === 'analog'} on:click={() => setFace('analog')}>analog</button>
+      <div class="seg faces" role="group" aria-label="Clock face">
+        <button class="arrow" on:click={() => setFace(stepFace(face, -1).id)} title="Previous face ([)" aria-label="Previous face">‹</button>
+        <button class="face-name" aria-pressed={picking} aria-expanded={picking} on:click={togglePicker} title="All {FACES.length} faces (f)">{def.name}</button>
+        <button class="arrow" on:click={() => setFace(stepFace(face, 1).id)} title="Next face (])" aria-label="Next face">›</button>
       </div>
-      {#if face === 'digital'}
+      {#if def.hours && !picking}
         <div class="seg" role="group" aria-label="Hour format">
           <button aria-pressed={!hour12} on:click={() => setHour12(false)}>24h</button>
           <button aria-pressed={hour12} on:click={() => setHour12(true)}>12h</button>
         </div>
       {/if}
-      {#if roomy}
+      {#if roomy && !picking}
         <button class="cities" aria-pressed={editingZones} on:click={() => (editingZones = !editingZones)} title="World clocks">cities</button>
       {/if}
     </footer>
@@ -259,29 +290,60 @@
     gap: 10px;
   }
 
-  /* digital readout */
-  .readout {
+  .clock-body[hidden] {
+    display: none;
+  }
+
+  /* the gallery of faces */
+  .gallery {
+    flex: 1 1 0;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+    grid-auto-rows: min-content;
+    gap: 8px;
+    padding: 2px;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg2) transparent;
+  }
+  .tile {
     display: flex;
-    align-items: flex-start;
-    line-height: 1;
-    font-weight: 300;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 4px 7px;
+    border: 1px solid var(--bg2);
+    border-radius: 10px;
+    color: var(--t1);
+    overflow: hidden;
+  }
+  .tile:hover,
+  .tile:focus-visible {
+    border-color: color-mix(in srgb, var(--hl1) 60%, var(--bg2));
+    background: color-mix(in srgb, var(--bg2) 22%, var(--bg1));
+    color: var(--t2);
+    outline: none;
+  }
+  .tile[aria-pressed='true'] {
+    border-color: var(--hl1);
+    background: color-mix(in srgb, var(--hl1) 10%, var(--bg1));
+    color: var(--hl1);
+  }
+  .thumb {
+    width: 104px;
+    height: 68px;
+    display: grid;
+    place-items: center;
+    color: var(--t2);
+    pointer-events: none;
+  }
+  .tile-name {
+    font-size: 11px;
     white-space: nowrap;
   }
-  .colon {
-    color: var(--t1);
-    margin: 0 -0.04em;
-    position: relative;
-    top: -0.05em;
-  }
-  .period {
-    margin: 0.2em 0 0 0.25em;
-    font-size: 0.17em;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    color: var(--t1);
-  }
+
   .date {
     margin: 0;
     color: var(--t1);
@@ -521,6 +583,15 @@
   .seg button[aria-pressed='true'] {
     background: var(--hl1);
     color: var(--bg1);
+  }
+  .seg .arrow {
+    padding: 2px 8px;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .seg .face-name {
+    min-width: 76px;
+    color: var(--t2);
   }
 
   /* Phones stack the panes and size each frame by its content, so give the

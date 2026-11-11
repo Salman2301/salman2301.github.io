@@ -24,6 +24,10 @@ Type `help` in the terminal to see every command.
 | --- | --- |
 | ![Radio and Spotify panes drawn in the theme, with favourites](docs/screenshots/music.png) | ![The music panel opened from the status bar](docs/screenshots/music-panel.png) |
 
+| 22 clock faces |
+| --- |
+| ![The clock's gallery of faces: analog dials, flip, segments, binary, words and more](docs/screenshots/clock-faces.png) |
+
 | Snake Arena | Autocomplete |
 | --- | --- |
 | ![Snake Arena with a bot about to cut you off](docs/screenshots/arena.png) | ![Floating autocomplete menu](docs/screenshots/autocomplete.png) |
@@ -43,7 +47,7 @@ Type `help` in the terminal to see every command.
   - **Repeating tasks**: `@daily`, `@weekdays`, `@weekly`, `@monthly`, `@yearly`, `@every monday`, `@every mon, wed`, `@every 2 weeks`, each with an optional time (`standup @daily 9:00`, `gym @every mon, wed 6pm`), or the repeat menu under a task's due date. Ticking one moves it to its next time (its sub-tasks open again) instead of finishing it, and the calendar shows the times ahead.
   - **Reminders** (`open reminders`): upcoming reminders grouped as overdue, today, tomorrow, this week and later; add one with `call mom @tmrw`.
   - **Calendar** (`calendar`, `cal week`): year, month, week and day views of your reminders. Pinch (touch or trackpad) or ctrl+scroll to zoom between them with an animated zoom into the spot you pinched; swipe or ←/→ for the next page. Click an hour in the day view to add a reminder there.
-  - **Clock** (`clock`): calm by default, just the time and date; hover for digital / analog and 12 / 24h (digital), and "cities" for world clocks (`clock add Asia/Tokyo`).
+  - **Clock** (`clock`): calm by default, just the time and date. 22 faces drawn in your theme: analog dials (minimal, numerals, Roman, station, pilot, diver, chrono, Bauhaus, day and night, arcs, orbit, radar) and digital ones (big digits, flip, seven-segment, dot matrix, binary, words, fuzzy, terminal, progress, nerd). Hover for the face gallery, 12 / 24h and "cities" for world clocks (`clock flip`, `clock faces`, `clock add Asia/Tokyo`).
   - **Timer** (`timer 5m`, `stopwatch`): stopwatch with laps, and a countdown that still rings when its pane is closed.
   - **Music**: **Radio** (`radio`, `radio list`) has 36 free live stations by genre (FIP, Radio Paradise, NTS, WFMU, jazz, classical, lo-fi, news), and **Spotify** (`spotify <link>`, `spotify lofi`) plays playlists, albums and shows. Both are drawn in your theme with the same controls, keep playing when you switch tabs or close the pane, and only one plays at a time. Star stations and playlists to build a favourites list (`radio fav`, `spotify fav`); next and previous step through the list you chose. The status bar has play / pause (`Alt+P`), and its name opens the full controls for both.
   - **Digital Rain** (`open matrix`) and **Embed** (`embed <url>`) for any page that allows it.
@@ -142,7 +146,7 @@ Everything is saved in your browser's local storage. Nothing is sent to a server
 
 **Calendar** (focused): pinch or `Ctrl`+scroll zooms between year, month, week and day; `+` / `-` zoom; `Y` `M` `W` `D` pick a view; `←` / `→` or swipe for the next page; `T` for today.
 
-**Clock** (focused): `A` digital / analog, `H` 12h / 24h. **Games**: WASD or arrows move, `Space` pauses.
+**Clock** (focused): `F` face gallery, `]` / `[` next / previous face, `H` 12h / 24h. **Games**: WASD or arrows move, `Space` pauses.
 
 **On a phone**: swipe left or right between panes, tap the chips in the bottom bar, and use **+** for everything the `Alt` keys do; see [On a phone](#on-a-phone).
 
@@ -192,6 +196,7 @@ Spaces group tasks, notes and reminders (`space new Work`, `space Work`, or the 
 | `screensaver matrix` | show a screensaver now and use it when idle (`stars`, `pipes`, `bounce`, `random`) |
 | `sound on` / `sound off` | sound effects and reminder chimes |
 | `clock add tokyo` | a world clock (a city or a zone like `Asia/Tokyo`) |
+| `clock faces`, `clock diver` | list the clock faces; wear one by name |
 | `pomodoro 50/10/20` | focus / short break / long break minutes |
 | `radio fip` | tune in to a station; the status-bar player remembers it |
 | `radio fav`, `radio favs` | star the current station; list your favourites and step through them |
