@@ -1,4 +1,5 @@
 import { get } from 'svelte/store';
+import { FACES, findFace, stepFace } from '../widgets/clock/faces';
 import type { CommandContext, CommandDef, Config } from '../core/types';
 import { leaves, openWidget, updatePaneConfig, workspace, type PaneLeaf } from '../core/workspace';
 import {
@@ -181,15 +182,16 @@ function zoneTable(zones: string[], hour12: boolean): string {
   return out.join('\n');
 }
 
-const CLOCK_USAGE = '[add <city|zone>|rm <city|n>|zones|12h|24h|analog|digital]';
+const CLOCK_USAGE = '[<face>|faces|next|prev|add <city|zone>|rm <city|n>|zones|12h|24h]';
 
 const clock: CommandDef = {
   name: 'clock',
-  description: 'clock with world time zones: clock add tokyo, clock rm 1, clock zones',
+  description: 'clock with many faces and world time zones: clock faces, clock flip, clock add tokyo',
   usage: `clock ${CLOCK_USAGE}`,
   group: 'widgets',
   complete: (args) => {
-    if (args.length <= 1) return ['add', 'rm', 'zones', '12h', '24h', 'analog', 'digital', 'open'];
+    if (args.length <= 1) return ['faces', 'next', 'prev', 'add', 'rm', 'zones', '12h', '24h', 'open', ...FACES.map((f) => f.id)];
+    if (args[0] === 'face') return FACES.map((f) => f.id);
     if (args[0] === 'add') return [...new Set([...allZones().map(slug), ...allZones()])];
     if (args[0] === 'rm') return zonesOf(clockPane()?.config).map(slug);
     return [];
@@ -233,12 +235,28 @@ const clock: CommandDef = {
       case '24h':
         writeClock(ctx, { hour12: sub === '12h' });
         return ctx.print(`clock: ${sub}`, 'muted');
-      case 'analog':
-      case 'digital':
-        writeClock(ctx, { face: sub });
-        return ctx.print(`clock: ${sub} face`, 'muted');
-      default:
-        ctx.print(usageOf(ctx, CLOCK_USAGE), 'error');
+      case 'faces': {
+        const current = findFace(pane?.config.face)?.id ?? 'digital';
+        const width = Math.max(...FACES.map((f) => f.id.length)) + 2;
+        ctx.print(FACES.map((f) => `  ${f.id === current ? '*' : ' '} ${f.id.padEnd(width)}${f.name}  ·  ${f.note}`).join('\n'));
+        return ctx.print('clock <face> to wear one  ·  clock next / prev  ·  f in the clock pane opens the gallery', 'muted');
+      }
+      case 'next':
+      case 'prev': {
+        const next = stepFace(findFace(pane?.config.face)?.id ?? 'digital', sub === 'next' ? 1 : -1);
+        writeClock(ctx, { face: next.id });
+        return ctx.print(`clock: ${next.name} face`, 'muted');
+      }
+      default: {
+        // "clock flip", "clock face flip", "clock day and night"
+        const chosen = findFace(sub === 'face' ? rest.join(' ') : ctx.args.join(' '));
+        if (!chosen) {
+          ctx.print(usageOf(ctx, CLOCK_USAGE), 'error');
+          return ctx.print('see every face: clock faces', 'muted');
+        }
+        writeClock(ctx, { face: chosen.id });
+        ctx.print(`clock: ${chosen.name} face`, 'muted');
+      }
     }
   },
 };
