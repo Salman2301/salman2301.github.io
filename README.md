@@ -20,6 +20,10 @@ Type `help` in the terminal to see every command.
 | --- | --- |
 | ![Hacker News, pomodoro and tasks](docs/screenshots/morning-brief.png) | ![Notes next to the terminal](docs/screenshots/notes.png) |
 
+| Radio and Spotify, one look | Music panel in the status bar |
+| --- | --- |
+| ![Radio and Spotify panes drawn in the theme, with favourites](docs/screenshots/music.png) | ![The music panel opened from the status bar](docs/screenshots/music-panel.png) |
+
 | Snake Arena | Autocomplete |
 | --- | --- |
 | ![Snake Arena with a bot about to cut you off](docs/screenshots/arena.png) | ![Floating autocomplete menu](docs/screenshots/autocomplete.png) |
@@ -41,12 +45,12 @@ Type `help` in the terminal to see every command.
   - **Calendar** (`calendar`, `cal week`): year, month, week and day views of your reminders. Pinch (touch or trackpad) or ctrl+scroll to zoom between them with an animated zoom into the spot you pinched; swipe or ←/→ for the next page. Click an hour in the day view to add a reminder there.
   - **Clock** (`clock`): calm by default, just the time and date; hover for digital / analog and 12 / 24h (digital), and "cities" for world clocks (`clock add Asia/Tokyo`).
   - **Timer** (`timer 5m`, `stopwatch`): stopwatch with laps, and a countdown that still rings when its pane is closed.
-  - **Radio** (`radio`, `radio list`): free live stations (FIP, KEXP, Radio Paradise, NTS), drawn in your theme. Play and pause from the status bar or with `Alt+P`. **Spotify** (`spotify <link>`) plays playlists with presets.
+  - **Music**: **Radio** (`radio`, `radio list`) has 36 free live stations by genre (FIP, Radio Paradise, NTS, WFMU, jazz, classical, lo-fi, news), and **Spotify** (`spotify <link>`, `spotify lofi`) plays playlists, albums and shows. Both are drawn in your theme with the same controls, keep playing when you switch tabs or close the pane, and only one plays at a time. Star stations and playlists to build a favourites list (`radio fav`, `spotify fav`); next and previous step through the list you chose. The status bar has play / pause (`Alt+P`), and its name opens the full controls for both.
   - **Digital Rain** (`open matrix`) and **Embed** (`embed <url>`) for any page that allows it.
 - **Arcade**: Snake, Snake Arena, Tetris, Space Impact, Bounce, Car Racing, Brick Breaker, Byte Runner, Typing Defense, Pairs and Sudoku, with saved high scores (`games`, `play sudoku`). WASD or arrows everywhere, Space pauses and resumes, and touch screens get an on-screen pad. A run counts even if you restart, leave or close it before game over, and high scores only ever go up: `reset --all`, backups and sync never lower them.
   - **Snake Arena** (`play arena`): steer with the mouse or A/D, hold click or W to boost (it costs length), eat to grow, and make other snakes run into you. Nine bots look ahead for bodies and walls, keep to open space, run from bigger snakes and hunt smaller ones by running alongside and cutting in front.
   - **Car Racing**: other cars signal before they change lanes and glide across, never crash into each other, and never line up across all three lanes, so there is always a way through.
-- **Search** (`⌘K` / `Ctrl+K`, `Alt+K`, or `search`): one box over tasks, notes, commands, widgets, games, themes, radio stations and spaces. `#` narrows to tasks (`#12` jumps to task 12), `/` to notes, `>` to commands; `theme nord` or `>radio kexp` runs the line in a terminal.
+- **Search** (`⌘K` / `Ctrl+K`, `Alt+K`, or `search`): one box over tasks, notes, commands, widgets, games, themes, radio stations and spaces. `#` narrows to tasks (`#12` jumps to task 12), `/` to notes, `>` to commands; `theme nord` or `>radio fip` runs the line in a terminal.
 - **Backup and sync**: `backup` saves everything (tasks, notes, spaces, settings, layout) to a JSON file and `backup import` loads one, in any browser. `sync folder` keeps the same data in one file, `salman2301-workspace.json`, in a folder you pick; put that folder in iCloud Drive, Dropbox, Google Drive, OneDrive or Syncthing and every computer that picks it shares your data. Changes save a few seconds after you make them, a newer file loads when you open the site, and if both sides changed you choose with `sync pull` or `sync push`. Nothing goes to a server. Folder sync needs Chrome, Edge, Brave or Opera on a computer; `sync --help` explains it all.
 - **Help and feedback**: any command explains itself with `--help` (or `help <command>`). `issue` opens a GitHub issue with your browser and screen size filled in.
 - **Installable app**: install it from the browser (or run `install`) for its own window and offline use; reminders become system notifications while it runs in the background.
@@ -89,8 +93,8 @@ Everything is saved in your browser's local storage. Nothing is sent to a server
 | `Alt+[` / `Alt+]` | previous / next tab |
 | `Alt+T` | templates |
 | `Alt+Y` / `Alt+Shift+Y` | next / random theme (in a space: the space's theme) |
-| `Alt+P` | play / pause the radio |
-| `Alt+.` / `Alt+,` | next / previous radio station |
+| `Alt+P` | play / pause the music (radio or Spotify, whichever you used last) |
+| `Alt+.` / `Alt+,` | next / previous station or playlist |
 | `Alt+S` | screensaver (any key returns) |
 
 **Terminal**
@@ -153,7 +157,7 @@ Run `install`, or use the install icon in the address bar (Chrome, Edge), **File
 Below 720px wide the workspace switches to a phone layout:
 
 - **One pane per screen.** Swipe left or right to move between panes, or tap a pane's chip in the bar at the bottom. Each pane scrolls its own content; the page itself never scrolls.
-- **+** opens a sheet with every widget, and the actions that are `Alt` shortcuts on a computer (templates, new terminal, close pane, new tab, themes, radio, screensaver, install, backup).
+- **+** opens a sheet with every widget, and the actions that are `Alt` shortcuts on a computer (templates, new terminal, close pane, new tab, themes, music, screensaver, install, backup).
 - **Search** is the magnifier next to it.
 - **Typing**: the layout shrinks to the part of the screen above the keyboard and the bottom bars step aside, so the prompt or field you are in stays visible. Fields are never focused on their own, so swiping does not pop the keyboard up.
 - **Terminal key row**: `tab`, `↑`, `↓`, `→`, `esc`, `^C`, `^L` and `^U` sit under the prompt, since phone keyboards do not have them.
@@ -189,7 +193,9 @@ Spaces group tasks, notes and reminders (`space new Work`, `space Work`, or the 
 | `sound on` / `sound off` | sound effects and reminder chimes |
 | `clock add tokyo` | a world clock (a city or a zone like `Asia/Tokyo`) |
 | `pomodoro 50/10/20` | focus / short break / long break minutes |
-| `radio kexp` | tune in to a station; the status-bar player remembers it |
+| `radio fip` | tune in to a station; the status-bar player remembers it |
+| `radio fav`, `radio favs` | star the current station; list your favourites and step through them |
+| `spotify lofi`, `spotify fav` | play a preset or a link; star what is loaded |
 | `reset` / `reset --all` | the classic layout / clear everything (high scores stay) |
 | `issue` | report a problem on GitHub, with your browser filled in |
 

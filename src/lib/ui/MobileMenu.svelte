@@ -7,7 +7,7 @@
   import { openOverlay, templatePickerOpen } from '../core/ui';
   import { canClosePane, closePane, leaf, leaves, newTab, openWidget, splitPane, workspace } from '../core/workspace';
   import { runInTerminal } from '../terminal/context';
-  import { radioState, stepStation, toggleRadio } from '../widgets/radio/player';
+  import { nowPlaying, stepMusic, toggleMusic } from '../core/music';
 
   /**
    * The phone menu (the + in the dock): open any widget, and the actions that
@@ -24,7 +24,6 @@
   }
 
   $: focused = $workspace.focused ?? leaves($workspace.root)[0]?.id;
-  $: playing = $radioState.status === 'playing' || $radioState.status === 'connecting';
 
   interface Action {
     label: string;
@@ -51,8 +50,8 @@
         { label: 'Next theme', hint: $themeStore, run: () => void cycleThemeHere(false) },
         { label: 'Random theme', run: () => void cycleThemeHere(true) },
         { label: `Mode: ${$themeMode}`, hint: 'system, dark, light', run: cycleThemeMode },
-        { label: playing ? 'Pause radio' : 'Play radio', hint: $radioState.station.name, run: toggleRadio },
-        { label: 'Next station', run: () => void stepStation(1) },
+        { label: $nowPlaying.live ? 'Pause music' : 'Play music', hint: $nowPlaying.title, run: toggleMusic },
+        { label: $nowPlaying.source === 'radio' ? 'Next station' : 'Next playlist', run: () => void stepMusic(1) },
         { label: 'Screensaver', run: () => startScreensaver() },
       ],
     },
@@ -68,7 +67,7 @@
   ];
 
   // The theme and radio buttons keep the sheet open, so you can tap them again.
-  const STAY = new Set(['Next theme', 'Random theme', 'Next station']);
+  const STAY = new Set(['Next theme', 'Random theme', 'Next station', 'Next playlist']);
 
   /* swipe the sheet down to close */
   let startY = 0;

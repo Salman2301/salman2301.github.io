@@ -34,7 +34,7 @@ export function isValidSpotify(item: MediaItem): boolean {
   return KINDS.has(item.kind) && ID.test(item.id);
 }
 
-function darkTheme(): boolean {
+export function darkTheme(): boolean {
   const hex = themes[get(themeStore)]?.[0] ?? '#000000';
   const n = parseInt(hex.slice(1), 16);
   return ((n >> 16) & 255) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114 <= 150;
