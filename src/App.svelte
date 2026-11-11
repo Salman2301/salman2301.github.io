@@ -2,7 +2,7 @@
   import { get } from 'svelte/store';
   import { overlays } from './lib/core/registry';
   import { openOverlay, templatePickerOpen } from './lib/core/ui';
-  import { stepStation, toggleRadio } from './lib/widgets/radio/player';
+  import { startMusic, stepMusic, toggleMusic } from './lib/core/music';
   import { onMount } from 'svelte';
   import { startReminders } from './lib/core/reminders';
   import { isMobile, startViewport } from './lib/core/device';
@@ -56,15 +56,15 @@
         return;
       case 'KeyP':
         handled();
-        toggleRadio();
+        toggleMusic();
         return;
       case 'Period':
         handled();
-        stepStation(1);
+        stepMusic(1);
         return;
       case 'Comma':
         handled();
-        stepStation(-1);
+        stepMusic(-1);
         return;
       case 'Slash':
         handled();
@@ -131,6 +131,7 @@
     startScreenTime();
     startPwa();
     startSync();
+    startMusic();
   });
 </script>
 

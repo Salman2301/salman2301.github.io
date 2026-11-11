@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { persisted } from '../../core/storage';
-import { DEFAULT_STATION, findStation, STATIONS, type Station } from './stations';
+import { DEFAULT_STATION, findStation, GENRES, STATIONS, type Station } from './stations';
 
 /**
  * The one radio player on the page. The Radio pane, the status bar control
@@ -22,6 +22,34 @@ export interface RadioState {
 
 /** What survives a reload: the last station and the volume. Never auto-plays. */
 export const radioPrefs = persisted('radio', { slug: DEFAULT_STATION.slug, volume: 0.6 });
+
+/* ------------------------------------------------- favourites and lists */
+
+/** Slugs of the stations you starred, in the order you starred them. */
+export const radioFavs = persisted<string[]>('radio:favs', []);
+
+/** The list the player shows and that next / previous step through: "favs", "all" or a genre. */
+export const radioList = persisted<string>('radio:list', 'all');
+
+export const RADIO_LISTS: { id: string; label: string }[] = [{ id: 'favs', label: 'favourites' }, { id: 'all', label: 'all' }, ...GENRES.map((g) => ({ id: g as string, label: g as string }))];
+
+export function isFavStation(slug: string, favs: string[] = get(radioFavs)): boolean {
+  return favs.includes(slug);
+}
+
+/** Star or unstar a station. Returns true when it is now a favourite. */
+export function toggleFavStation(slug: string): boolean {
+  const on = !isFavStation(slug);
+  radioFavs.update((f) => (on ? [...f.filter((x) => x !== slug), slug] : f.filter((x) => x !== slug)));
+  return on;
+}
+
+/** The stations of a list. Favourites keep the order they were starred in. */
+export function stationsIn(list: string, favs: string[] = get(radioFavs)): Station[] {
+  if (list === 'favs') return favs.map((slug) => STATIONS.find((s) => s.slug === slug)).filter((s): s is Station => !!s);
+  if (list === 'all') return STATIONS;
+  return STATIONS.filter((s) => s.genre === list);
+}
 
 export const radioState = writable<RadioState>({
   station: findStation(get(radioPrefs).slug) ?? DEFAULT_STATION,
@@ -86,10 +114,16 @@ export function tune(station: Station) {
   connect(station);
 }
 
-/** Tune to the next (1) or previous (-1) station, wrapping around, and play it. Returns it. */
+/**
+ * Tune to the next (1) or previous (-1) station of the chosen list, wrapping
+ * around, and play it. An empty list (no favourites yet) steps through all.
+ */
 export function stepStation(dir: 1 | -1): Station {
-  const i = Math.max(0, STATIONS.findIndex((s) => s.slug === get(radioState).station.slug));
-  const next = STATIONS[(i + dir + STATIONS.length) % STATIONS.length];
+  const chosen = stationsIn(get(radioList));
+  const list = chosen.length ? chosen : STATIONS;
+  const at = list.findIndex((s) => s.slug === get(radioState).station.slug);
+  // from a station outside the list, "next" starts at its first and "previous" at its last
+  const next = list[at < 0 ? (dir === 1 ? 0 : list.length - 1) : (at + dir + list.length) % list.length];
   tune(next);
   return next;
 }
@@ -131,4 +165,6 @@ radioState.subscribe((s) => {
   ms.playbackState = s.status === 'playing' || s.status === 'connecting' ? 'playing' : 'paused';
   ms.setActionHandler('play', play);
   ms.setActionHandler('pause', pause);
+  ms.setActionHandler('nexttrack', () => void stepStation(1));
+  ms.setActionHandler('previoustrack', () => void stepStation(-1));
 });
