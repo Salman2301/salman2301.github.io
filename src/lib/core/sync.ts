@@ -163,9 +163,22 @@ export async function chooseFolder(): Promise<ConnectResult> {
   return { folder: h.name };
 }
 
-/** Write this browser's data to the folder. */
-export async function push(ask = true): Promise<void> {
+/**
+ * Write this browser's data to the folder. `auto` is set by the timers: then a
+ * file that changed since this browser last synced is not overwritten; the
+ * user decides with `sync pull` or `sync push`.
+ */
+export async function push(ask = true, auto = false): Promise<void> {
   const h = await folder(ask);
+  if (auto) {
+    let cur: File | null = null;
+    try {
+      cur = await (await h.getFileHandle(SYNC_FILE)).getFile();
+    } catch {
+      cur = null; // not there: writing creates it
+    }
+    if (cur && cur.lastModified !== get(syncState).fileAt) return newerNotice();
+  }
   const fh = await h.getFileHandle(SYNC_FILE, { create: true });
   const w = await fh.createWritable();
   await w.write(JSON.stringify(snapshot(), null, 1));
@@ -251,8 +264,16 @@ function schedulePush() {
   if (pushTimer) clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
     pushTimer = undefined;
-    push(false).catch(failed);
+    push(false, true).catch(failed);
   }, PUSH_DELAY);
+}
+
+/** The folder's file is newer than this browser's last sync, and this browser has changes too. */
+function newerNotice() {
+  notify('Sync: the folder has newer data, and so does this browser', {
+    body: 'run "sync pull" to use the folder\'s copy, or "sync push" to keep this one',
+    durationMs: 15_000,
+  });
 }
 
 let lastCheck = 0;
@@ -277,13 +298,7 @@ async function checkFile() {
   }
   if (!found || found.at === s.fileAt) return;
   if (dataKey(found.backup) === dataKey(snapshot())) return patch({ fileAt: found.at });
-  if (get(syncState).dirty) {
-    notify('Sync: the folder has newer data, and so does this browser', {
-      body: 'run "sync pull" to use the folder\'s copy, or "sync push" to keep this one',
-      durationMs: 15_000,
-    });
-    return;
-  }
+  if (get(syncState).dirty) return newerNotice();
   await pull(false).catch(failed);
 }
 
@@ -317,7 +332,7 @@ export function startSync() {
   window.addEventListener('pagehide', () => {
     if (pushTimer) {
       clearTimeout(pushTimer);
-      void push(false).catch(() => {});
+      void push(false, true).catch(() => {});
     }
   });
 }
