@@ -117,3 +117,6 @@ dist
 .yarn/install-state.gz
 .pnp.*
 .yarn/*
+
+# built by the local MCP server on start
+mcp/.build

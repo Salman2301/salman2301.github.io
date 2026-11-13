@@ -197,6 +197,47 @@ The page offers what it holds as [WebMCP](https://webmachinelearning.github.io/w
 - It needs a browser with WebMCP (`document.modelContext`). In Chrome it may still need switching on: search for WebMCP in `chrome://flags`. In a browser without it, nothing happens.
 - A browser will not start music for an agent until you have clicked the page once.
 
+### Local MCP server (Claude Code and other MCP clients)
+
+The server in `mcp/` lets an MCP client read and change your tasks, notes, spaces and reminders in the same file the site syncs. Turn on `sync folder` first, then add the server (replace `<repo>` with the folder this repo is in, and `<sync folder>` with the folder you picked):
+
+```sh
+claude mcp add s2301 -- node <repo>/mcp/server.mjs --file <sync folder>
+```
+
+Or serve it over HTTP on your computer:
+
+```sh
+node <repo>/mcp/server.mjs --file <sync folder> --http --port 8787
+```
+
+Any client that starts a server from a command works the same way. Where it asks for a JSON file with an `mcpServers` entry:
+
+```json
+{
+  "mcpServers": {
+    "s2301": {
+      "command": "node",
+      "args": ["<repo>/mcp/server.mjs", "--file", "<sync folder>"]
+    }
+  }
+}
+```
+
+The address is `http://127.0.0.1:8787/mcp`. `--file` also takes the `salman2301-workspace.json` file itself. `--read-only` offers only the tools that read. `node <repo>/mcp/server.mjs --help` lists the options.
+
+| group | tools |
+| --- | --- |
+| everything | `get_overview` (start here), `search`, `get_stats`, `export_backup`, `undo_delete` |
+| tasks | `list_tasks`, `get_task`, `add_task`, `add_tasks`, `update_task`, `complete_task`, `focus_task`, `delete_task`, `clear_done_tasks` |
+| notes | `list_notes`, `read_note`, `create_note`, `update_note`, `edit_note`, `delete_note` |
+| spaces | `list_spaces`, `add_space`, `rename_space`, `delete_space` |
+| calendar | `list_reminders` |
+
+- The server reads the file, makes the change, and writes it back. The site loads the change when you come back to its tab, unless it has unsaved changes of its own; then `sync pull` or `sync push` decides.
+- Nothing leaves your computer. The server listens on localhost only and refuses requests from web pages.
+- Undo (`undo_delete`) lasts until the server stops.
+
 ### Backups
 
 `backup` saves everything to a JSON file and `backup import` loads one (it asks first). This works in every browser, so it is also how you move data to Safari, Firefox or a phone. High scores are never lowered by a restore.
