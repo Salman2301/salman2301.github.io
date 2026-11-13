@@ -3,6 +3,7 @@
   import { overlays } from './lib/core/registry';
   import { openOverlay, templatePickerOpen } from './lib/core/ui';
   import { startMusic, stepMusic, toggleMusic } from './lib/core/music';
+  import { startWebMcp } from './lib/core/webmcp';
   import { onMount } from 'svelte';
   import { startReminders } from './lib/core/reminders';
   import { isMobile, startViewport } from './lib/core/device';
@@ -132,6 +133,7 @@
     startPwa();
     startSync();
     startMusic();
+    startWebMcp();
   });
 </script>
 
