@@ -176,6 +176,27 @@ Everything lives in your browser. To use the same tasks, notes and settings on a
 
 The data is one file, `salman2301-workspace.json`. Changes are written a few seconds after you make them, and a newer file loads when you open the site or come back to it. If both sides changed, nothing is overwritten: run `sync pull` to use the folder's copy or `sync push` to keep this one. `sync` shows the status, `sync auto off` makes it manual, and `sync off` stops. If the browser asks again on a later visit, click **⟳ sync folder** in the status bar. Folder sync needs Chrome, Edge, Brave or Opera on a computer; `sync --help` explains it all.
 
+### Let an AI agent use it (WebMCP)
+
+The page offers what it holds as [WebMCP](https://webmachinelearning.github.io/webmcp/) tools, so an AI agent built into the browser can read and change it: "what is on today", "turn this plan into tasks", "tick eggs off my groceries note", "start 50 minutes on #12 with some jazz".
+
+| group | tools |
+| --- | --- |
+| everything | `get_overview` (start here: today, overdue, timer, music, panes), `search`, `get_stats`, `export_backup`, `undo_delete` |
+| tasks | `list_tasks`, `get_task`, `add_task`, `add_tasks` (many at once, with sub-tasks), `update_task`, `complete_task`, `focus_task`, `delete_task`, `clear_done_tasks` |
+| notes | `list_notes`, `read_note`, `create_note`, `update_note` (replace, append, prepend, move, pin), `edit_note` (find and replace a passage), `delete_note` |
+| spaces | `list_spaces`, `add_space`, `rename_space`, `delete_space`, `show_space` |
+| calendar | `list_reminders` |
+| focus | `control_pomodoro` (status, start, pause, reset, skip, minutes, task) |
+| music | `control_music` (status, play, pause, next, previous, station, volume), `list_stations` |
+| the page | `get_workspace`, `open_pane`, `close_pane`, `apply_layout`, `open_tab`, `set_theme`, `show`, `run_command` (any terminal command) |
+
+- They act on the open page, so the panes update as the agent works. Nothing is sent to a server.
+- Deletes can be undone: `undo_delete` puts back the last task, note, space or cleared tasks, until the page is reloaded.
+- `mcp` in the terminal says whether it is on and lists the tools; `mcp log` shows what an agent did.
+- It needs a browser with WebMCP (`document.modelContext`). In Chrome it may still need switching on: search for WebMCP in `chrome://flags`. In a browser without it, nothing happens.
+- A browser will not start music for an agent until you have clicked the page once.
+
 ### Backups
 
 `backup` saves everything to a JSON file and `backup import` loads one (it asks first). This works in every browser, so it is also how you move data to Safari, Firefox or a phone. High scores are never lowered by a restore.

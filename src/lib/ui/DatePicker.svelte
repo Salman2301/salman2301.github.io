@@ -115,7 +115,8 @@
 
 <style>
   .picker {
-    width: 232px;
+    box-sizing: border-box;
+    width: 240px;
     padding: 10px;
     border-radius: 10px;
     border: 1px solid var(--bg2);
@@ -146,7 +147,7 @@
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 2px;
   }
   .wd {
@@ -157,6 +158,8 @@
     padding: 2px 0;
   }
   .day {
+    min-width: 0;
+    padding: 0;
     height: 26px;
     border-radius: 6px;
     font-variant-numeric: tabular-nums;
