@@ -351,7 +351,9 @@
           {/if}
         </span>
         {#if t.repeat}<span class="rep" title="Repeats {t.repeat}{t.timesDone ? `, done ${t.timesDone} times` : ''}. Ticking it moves it to the next time.">↻ {repeatLabel(t.repeat)}</span>{/if}
+        {#if t.notes}<button class="mark" title="Has notes (n)" aria-label="Notes" on:click={() => (notesFor = notesFor === t.id ? null : t.id)}>≡</button>{/if}
         <span class="gap" />
+        <span class="acts"><span class="acts-in">
         {#if $projects.length > 1}
           <select
             class="act move"
@@ -370,6 +372,7 @@
         {/if}
         <button class="act" class:on={$activeTaskId === t.id} title={$activeTaskId === t.id ? 'Stop focusing and pause the pomodoro (f)' : 'Focus on this: starts the pomodoro (f)'} on:click={() => focusOn(t.id)} disabled={t.done}>focus</button>
         <button class="act del" title="Delete" aria-label="Delete task" on:click={() => removeTask(t.id)}>x</button>
+        </span></span>
         </div>
       </li>
       {#if notesFor === t.id}
@@ -564,6 +567,72 @@
   }
   .gap {
     display: none;
+  }
+  /* Wide: the row buttons take no room. They appear over the end of the row on hover or focus. */
+  .task {
+    position: relative;
+    --row: var(--bg1);
+  }
+  .task:hover,
+  .task:focus,
+  .task:focus-within {
+    --row: color-mix(in srgb, var(--bg2) 45%, var(--bg1));
+  }
+  .task.active {
+    --row: color-mix(in srgb, var(--hl1) 12%, var(--bg1));
+  }
+  /* A zero-width anchor before the due date: the buttons hang off it to the left, so the date stays in view. */
+  .acts {
+    display: none;
+    position: relative;
+    align-self: stretch;
+    width: 0;
+    margin-left: -8px;
+  }
+  .acts-in {
+    display: flex;
+    position: absolute;
+    right: 0;
+    top: -5px;
+    bottom: -5px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 4px 0 32px;
+    white-space: nowrap;
+    background: linear-gradient(to right, transparent, var(--row) 26px);
+  }
+  .due-wrap,
+  .rep,
+  .mark {
+    order: 2;
+  }
+  .task:hover .acts,
+  .task:focus .acts,
+  .task:focus-within .acts {
+    display: block;
+  }
+  .mark {
+    flex: 0 0 auto;
+    font-size: 11px;
+    padding: 0 4px;
+    color: var(--hl1);
+  }
+  .task:not(:hover):not(:focus):not(:focus-within) .due.none {
+    opacity: 0;
+  }
+  .todo.narrow .task .acts,
+  .todo.narrow .task .acts-in {
+    display: contents;
+  }
+  .narrow .due-wrap,
+  .narrow .rep {
+    order: 0;
+  }
+  .narrow .mark {
+    display: none;
+  }
+  .narrow .task .due.none {
+    opacity: 0.5;
   }
   /* Narrow: the title gets the whole line; details and buttons go below it,
      details on the left, buttons on the right. */
@@ -766,6 +835,7 @@
   }
   .task:hover .act,
   .task:focus .act,
+  .task:focus-within .act,
   .act.on {
     opacity: 1;
   }
