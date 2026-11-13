@@ -11,8 +11,8 @@
  * - everything else (radio streams, embeds, news): straight to the network
  */
 
-const VERSION = 'd9595872010f';
-const PRECACHE = /** @type {string[]} */ (["/","/assets/index.585008d0.js","/assets/LiveEditor.13631a8b.js","/assets/LiveEditor.bbbda5eb.css","/assets/index.c61493f4.css","/css/global.css","/favicon.ico","/icons/apple-touch-icon.png","/icons/icon-192.png","/icons/icon-512.png","/icons/icon.svg","/icons/maskable-512.png","/manifest.webmanifest"]);
+const VERSION = 'b8b2ceed2829';
+const PRECACHE = /** @type {string[]} */ (["/","/assets/index.e9faa195.js","/assets/LiveEditor.58006f40.js","/assets/LiveEditor.bbbda5eb.css","/assets/index.9c722b2e.css","/css/global.css","/favicon.ico","/icons/apple-touch-icon.png","/icons/icon-192.png","/icons/icon-512.png","/icons/icon.svg","/icons/maskable-512.png","/manifest.webmanifest"]);
 const CACHE = `s2301-${VERSION}`;
 const FONTS = 's2301-fonts';
 
