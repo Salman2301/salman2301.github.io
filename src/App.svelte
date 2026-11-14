@@ -12,6 +12,7 @@
   import { startScreenTime } from './lib/core/screentime';
   import { startPwa } from './lib/core/pwa';
   import { startSync } from './lib/core/sync';
+  import { moveInlineNotes } from './lib/core/tasknotes';
   import {
     closePane,
     focusNeighbour,
@@ -132,6 +133,8 @@
     startScreenTime();
     startPwa();
     startSync();
+    // tasks' old inline notes become notes of their own (after sync has had its look at the folder)
+    setTimeout(moveInlineNotes, 4000);
     startMusic();
     startWebMcp();
   });

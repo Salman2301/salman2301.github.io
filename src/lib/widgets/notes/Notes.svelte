@@ -3,7 +3,7 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import type { Config } from '../../core/types';
   import { renderMarkdown, toggleTask } from './markdown';
-  import { createNote, deleteNote, moveNote, notes, noteSpace, reorderNotes, sortNotes, timeAgo, titleOf, togglePin, updateNote } from './store';
+  import { createNote, deleteNote, moveNote, notes, noteSpace, reorderNotes, setArchived, sortNotes, timeAgo, titleOf, togglePin, updateNote } from './store';
   import { activeSpace, spaceForNew, visibleIn } from '../../core/spaces';
   import DatePicker from '../../ui/DatePicker.svelte';
   import { focusOn } from '../pomodoro/engine';
@@ -51,8 +51,12 @@
   let confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Only the notes of the active space (all of them under "all spaces").
-  $: sorted = sortNotes($notes).filter((n) => visibleIn($activeSpace, noteSpace(n)));
-  $: current = sorted.find((n) => n.id === config.noteId) ?? sorted[0];
+  // Archived notes have a list of their own; one opened from a link still shows.
+  $: inSpace = sortNotes($notes).filter((n) => visibleIn($activeSpace, noteSpace(n)));
+  $: showArchived = config.archived === true;
+  $: sorted = inSpace.filter((n) => !!n.archived === showArchived);
+  $: archivedCount = inSpace.filter((n) => n.archived).length;
+  $: current = inSpace.find((n) => n.id === config.noteId) ?? sorted[0];
   $: narrow = width > 0 && width < 560;
   $: showSidebar = sidebarOpen ?? (!narrow && width > 0);
   $: mode = toMode(config.mode);
@@ -481,11 +485,16 @@
             </button>
           </li>
         {/each}
-        {#if filtered.length === 0}<li class="empty">{search ? 'no matches' : 'no notes in this space yet'}</li>{/if}
+        {#if filtered.length === 0}<li class="empty">{search ? 'no matches' : showArchived ? 'nothing archived here' : 'no notes in this space yet'}</li>{/if}
       </ul>
       <div class="side-foot">
-        <button on:click={() => fileInput.click()}>import .md</button>
-        <span>{sorted.length} {sorted.length === 1 ? 'note' : 'notes'}</span>
+        {#if showArchived}
+          <button on:click={() => updateConfig({ archived: false, noteId: null })}>← notes</button>
+        {:else}
+          <button on:click={() => fileInput.click()}>import .md</button>
+          <button on:click={() => updateConfig({ archived: true, noteId: null })} title="Notes you archived, and notes of cleared tasks">archived{archivedCount ? ` (${archivedCount})` : ''}</button>
+        {/if}
+        <span>{sorted.length} {showArchived ? 'archived' : sorted.length === 1 ? 'note' : 'notes'}</span>
       </div>
     </aside>
   {/if}
@@ -495,7 +504,7 @@
       <button class="icon-btn" title="Toggle note list" aria-label="Toggle note list" on:click={() => (sidebarOpen = !showSidebar)}>
         <svg viewBox="0 0 16 16"><line x1="2.5" y1="4" x2="13.5" y2="4" /><line x1="2.5" y1="8" x2="13.5" y2="8" /><line x1="2.5" y1="12" x2="13.5" y2="12" /></svg>
       </button>
-      <span class="title">{titleOf(current)}</span>
+      <span class="title">{titleOf(current)}{#if current?.archived}<span class="arch"> archived</span>{/if}</span>
       <div class="modes" role="group" aria-label="View mode">
         {#each MODES as m}
           <button class:on={mode === m.id} title={m.title} on:click={() => setMode(m.id)}>{m.id}</button>
@@ -505,7 +514,12 @@
         <select class="space-pick" value={noteSpace(current)} on:change={(e) => current && moveNote(current.id, e.currentTarget.value)} title="Space this note belongs to" aria-label="Space">
           {#each $projects as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
         </select>
-        <button class="txt" title="Pin to the top" on:click={() => togglePin(current.id)}>{current.pinned ? 'unpin' : 'pin'}</button>
+        {#if current.archived}
+          <button class="txt" title="Put it back in the note list" on:click={() => current && setArchived(current.id, false)}>restore</button>
+        {:else}
+          <button class="txt" title="Pin to the top" on:click={() => togglePin(current.id)}>{current.pinned ? 'unpin' : 'pin'}</button>
+          <button class="txt" title="Move it out of the list, to the archived notes" on:click={() => current && setArchived(current.id, true)}>archive</button>
+        {/if}
         <button class="txt" title="Download as .md" on:click={exportNote}>export</button>
         <button class="txt danger" class:armed={confirmDelete} on:click={remove}>{confirmDelete ? 'confirm?' : 'delete'}</button>
       {/if}
@@ -729,6 +743,11 @@
   }
   .empty {
     padding: 8px;
+  }
+  .arch {
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--t1);
   }
   .side-foot {
     display: flex;

@@ -10,20 +10,17 @@
     addTaskLines,
     cleanTag,
     moveTask,
-    clearDone,
     formatSpent,
     INBOX_ID,
     isOverdue,
     projectOf,
     projects,
     removeSpaceTag,
-    removeTask,
     renameProject,
     renameTask,
     revealTaskId,
     setDue,
     setRepeat,
-    setTaskNotes,
     tagsOf,
     tasks,
     toggleTask,
@@ -33,8 +30,8 @@
   import { friendlyDate } from '../../core/dates';
   import { repeatLabel } from '../../core/repeat';
   import { activeSpace, ALL, deleteSpace, setActiveSpace } from '../../core/spaces';
-  import { linksIn, openMention, segments } from '../../core/mentions';
-  import type { Note } from '../../widgets/notes/store';
+  import { openMention, segments } from '../../core/mentions';
+  import { clearDoneTasks, deleteTask, ensureTaskNote, noteOfTask } from '../../core/tasknotes';
   import DatePicker from '../../ui/DatePicker.svelte';
   import { focusOn } from '../pomodoro/engine';
   import { mention } from '../../ui/mention';
@@ -159,9 +156,13 @@
     return out;
   }
 
-  /** The @ links in a piece of text (notes and tasks), with live labels. */
-  function linksOf(src: string, noteList: Note[], taskList: Task[]) {
-    return linksIn(src, noteList, taskList);
+  /* ------------------------------------------------------------ notes */
+
+  // A task's notes are a note in the notes app, linked to the task: ≡ opens it (making it the first time).
+  const hasNote = (t: Task, list: typeof $notes) => !!noteOfTask(t, list) || !!t.notes?.trim();
+  function openNote(id: string) {
+    const n = ensureTaskNote(id);
+    if (n) openMention('note', n.id);
   }
 
   function subCount(t: Task): { done: number; total: number } {
@@ -177,8 +178,6 @@
   let editText = '';
   /** The task whose due-date picker is open. */
   let dueFor: string | null = null;
-  /** The task whose notes are open. */
-  let notesFor: string | null = null;
   /** The task that is getting a new sub-task. */
   let subFor: string | null = null;
   let subText = '';
@@ -255,11 +254,11 @@
       toggleTask(id);
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault();
-      removeTask(id);
+      deleteTask(id);
       tick().then(() => (items[index + 1] ?? items[index - 1] ?? input)?.focus());
     } else if (e.key === 'Enter') startEdit(id, $tasks.find((t) => t.id === id)?.text ?? '');
     else if (e.key === 'f') focusOn(id);
-    else if (e.key === 'n') notesFor = notesFor === id ? null : id;
+    else if (e.key === 'n') openNote(id);
     else if (e.key === 's' && !$tasks.find((t) => t.id === id)?.parentId) openSub(id);
     else if (e.key === 'm') {
       e.preventDefault();
@@ -423,7 +422,7 @@
         </span>
         {#if t.repeat}<span class="rep" title="Repeats {t.repeat}{t.timesDone ? `, done ${t.timesDone} times` : ''}. Ticking it moves it to the next time.">↻ {repeatLabel(t.repeat)}</span>{/if}
         {#each t.tags ?? [] as name (name)}<button class="ttag" class:on={tag === name} title="Show only #{name}" on:click={() => updateConfig({ tag: tag === name ? '' : name })}>#{name}</button>{/each}
-        {#if t.notes}<button class="mark" title="Has notes (n)" aria-label="Notes" on:click={() => (notesFor = notesFor === t.id ? null : t.id)}>≡</button>{/if}
+        {#if hasNote(t, $notes)}<button class="mark" title="Open its note (n)" aria-label="Open note" on:click={() => openNote(t.id)}>≡</button>{/if}
         <span class="gap" />
         <span class="acts"><span class="acts-in">
         {#if spaceTags.length}
@@ -454,35 +453,15 @@
             {#each $projects as p (p.id)}<option value={p.id}>{p.id === projectOf(t) ? `in ${p.name}` : `→ ${p.name}`}</option>{/each}
           </select>
         {/if}
-        <button class="act" class:on={!!t.notes} title="Notes (n)" aria-label="Notes" on:click={() => (notesFor = notesFor === t.id ? null : t.id)}>≡</button>
+        <button class="act" class:on={hasNote(t, $notes)} title={hasNote(t, $notes) ? 'Open its note (n)' : 'Write a note for it, in the notes app (n)'} aria-label="Note" on:click={() => openNote(t.id)}>≡</button>
         {#if depth === 0}
           <button class="act" title="Add a sub-task (s)" aria-label="Add sub-task" on:click={() => openSub(t.id)} disabled={t.done}>+</button>
         {/if}
         <button class="act" class:on={$activeTaskId === t.id} title={$activeTaskId === t.id ? 'Stop focusing and pause the pomodoro (f)' : 'Focus on this: starts the pomodoro (f)'} on:click={() => focusOn(t.id)} disabled={t.done}>focus</button>
-        <button class="act del" title="Delete" aria-label="Delete task" on:click={() => removeTask(t.id)}>x</button>
+        <button class="act del" title="Delete (its note is archived)" aria-label="Delete task" on:click={() => deleteTask(t.id)}>x</button>
         </span></span>
         </div>
       </li>
-      {#if notesFor === t.id}
-        <li class="extra" class:sub={depth > 0}>
-          <textarea
-            class="notes"
-            use:mention={'note'}
-            value={t.notes ?? ''}
-            on:input={(e) => setTaskNotes(t.id, e.currentTarget.value)}
-            placeholder="notes for this task. @ links a note"
-            aria-label="Task notes"
-            spellcheck="false"
-          />
-          {#if linksOf(t.notes ?? '', $notes, $tasks).length}
-            <div class="links">
-              {#each linksOf(t.notes ?? '', $notes, $tasks) as l (l.id)}
-                <button class="ref" class:missing={l.kind === 'note' && l.missing} on:click={() => openMention(l.kind, l.id)}>{l.label}</button>
-              {/each}
-            </div>
-          {/if}
-        </li>
-      {/if}
       {#if subFor === t.id}
         <li class="extra sub">
           <input
@@ -510,11 +489,12 @@
     {/if}
   </ul>
 
+
   <footer>
     <div class="filters">
       {#each FILTERS as f}<button class:on={filter === f} on:click={() => updateConfig({ filter: f })}>{f}</button>{/each}
     </div>
-    <button on:click={clearDone} disabled={!$tasks.some((t) => t.done)}>clear done</button>
+    <button on:click={() => clearDoneTasks()} disabled={!$tasks.some((t) => t.done)} title="Remove finished tasks; their notes are archived">clear done</button>
   </footer>
 </div>
 
@@ -648,24 +628,6 @@
     font: inherit;
     font-size: 12px;
     outline: none;
-  }
-  .notes {
-    display: block;
-    width: calc(100% - 20px);
-    min-height: 56px;
-    margin: 4px 10px 0;
-    padding: 6px 8px;
-    border: 1px solid var(--bg2);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--t2);
-    font: inherit;
-    font-size: 12px;
-    resize: vertical;
-    outline: none;
-  }
-  .notes:focus {
-    border-color: var(--hl1);
   }
   form {
     padding: 8px 10px 6px;
@@ -830,7 +792,6 @@
   .extra.sub {
     padding-left: 26px;
   }
-  .extra .notes,
   .extra .pinput {
     margin: 0;
     width: 100%;
@@ -863,13 +824,6 @@
     background: none;
     color: var(--t1);
     text-decoration: line-through;
-  }
-  .links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin: 4px 10px 0;
-    font-size: 12px;
   }
   .task.flash {
     animation: flash 1.4s ease-out;

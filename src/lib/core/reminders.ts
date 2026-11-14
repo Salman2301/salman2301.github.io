@@ -52,6 +52,7 @@ export const reminders = derived([tasks, notes], ([$tasks, $notes]) => {
     }
   }
   for (const n of $notes) {
+    if (n.archived) continue;
     for (const d of new Set(datesIn(n.body))) {
       out.push({ kind: 'note', id: n.id, day: d.slice(0, 10), time: d.slice(11) || undefined, label: titleOf(n), projectId: noteSpace(n), done: false });
     }

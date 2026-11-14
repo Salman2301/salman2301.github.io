@@ -12,6 +12,8 @@ export interface Note {
   spaceId?: string;
   /** Position in the note list (lower first), set by dragging. */
   order?: number;
+  /** When it was archived: archived notes leave the list (the "archived" view shows them) and the calendar. */
+  archived?: number;
 }
 
 const WELCOME = `# Welcome to notes
@@ -110,6 +112,11 @@ export function updateNote(id: string, body: string) {
 
 export function deleteNote(id: string) {
   notes.update((list) => list.filter((n) => n.id !== id));
+}
+
+/** Archive a note, or bring it back. */
+export function setArchived(id: string, on: boolean) {
+  notes.update((list) => list.map((n) => (n.id !== id || !!n.archived === on ? n : on ? { ...n, archived: Date.now(), pinned: undefined } : { ...n, archived: undefined })));
 }
 
 export function togglePin(id: string) {

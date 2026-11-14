@@ -1,7 +1,8 @@
 import { get } from 'svelte/store';
 import { focusOn } from '../widgets/pomodoro/engine';
 import type { CommandDef } from '../core/types';
-import { activeTaskId, addTask, clearDone, moveTask, projects, removeTask, taskByNo, tasks, toggleTask } from '../core/tasks';
+import { activeTaskId, addTask, moveTask, projects, taskByNo, tasks, toggleTask } from '../core/tasks';
+import { clearDoneTasks, deleteTask } from '../core/tasknotes';
 import { openWidget } from '../core/workspace';
 import {
   fmt, MODE_LABEL, pause, pomodoro, pomodoroStats, remainingMs, reset, setDurations, skip, start, todayKey,
@@ -44,6 +45,14 @@ const commands: CommandDef[] = [
     },
   },
   {
+    name: 'kanban',
+    aliases: ['board'],
+    description: "a board of a space's tasks, a column per tag",
+    usage: 'kanban',
+    group: 'widgets',
+    run: (ctx) => void openWidget('kanban', undefined, { from: ctx.paneId }),
+  },
+  {
     name: 'todo',
     aliases: ['task', 'tasks'],
     description: 'task list: add, done, rm, focus, mv (to a space), ls, clear',
@@ -78,7 +87,7 @@ const commands: CommandDef[] = [
         const t = addTask(rest.join(' '));
         return t ? ctx.print(`added #${t.no}: ${t.text}`, 'success') : ctx.print('usage: todo add <text>', 'error');
       }
-      if (sub === 'clear') return clearDone(), ctx.print('cleared finished tasks', 'muted');
+      if (sub === 'clear') return clearDoneTasks(), ctx.print('cleared finished tasks; their notes are archived', 'muted');
       if (sub === 'mv' || sub === 'move') {
         const t = pick();
         if (!t) return;
@@ -91,7 +100,7 @@ const commands: CommandDef[] = [
       if (['done', 'undo', 'rm', 'focus'].includes(sub)) {
         const t = pick();
         if (!t) return;
-        if (sub === 'rm') removeTask(t.id);
+        if (sub === 'rm') deleteTask(t.id);
         else if (sub === 'focus') focusOn(t.id);
         else if ((sub === 'done') !== t.done) toggleTask(t.id);
         return ls();

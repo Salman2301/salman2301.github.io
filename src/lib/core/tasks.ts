@@ -36,7 +36,9 @@ export interface Task {
   projectId?: string;
   /** Set on a sub-task: the task it belongs to. */
   parentId?: string;
-  /** Free-form notes. */
+  /** The note in the notes app that holds this task's notes (see tasknotes.ts). */
+  noteId?: string;
+  /** Notes written before they moved to the notes app; tasknotes.ts moves them into a note. */
   notes?: string;
   /** Tags from its space's list, e.g. ["outreach"] (see cleanTag). */
   tags?: string[];
