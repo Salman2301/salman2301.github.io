@@ -7,12 +7,15 @@ import { load } from './storage';
 import {
   activeTaskId,
   addProject,
+  addSpaceTags,
+  cleanTag,
   addTask,
   INBOX_ID,
   moveTask,
   projectOf,
   projects,
   removeProject,
+  removeSpaceTag,
   removeTask,
   renameProject,
   renameTask,
@@ -20,6 +23,8 @@ import {
   setDue,
   setRepeat,
   setTaskNotes,
+  setTaskTags,
+  tagsOf,
   taskByNo,
   tasks,
   toggleTask,
@@ -170,6 +175,7 @@ export function taskOut(t: Task) {
   if (t.due) out.due = t.due;
   if (t.repeat) out.repeat = t.repeat;
   if (t.notes) out.notes = t.notes;
+  if (t.tags?.length) out.tags = t.tags;
   if (parent) out.subtaskOf = parent.no;
   const subs = list.filter((x) => x.parentId === t.id);
   if (subs.length) out.subtasks = subs.map((s) => ({ number: s.no, text: s.text, done: s.done }));
@@ -198,6 +204,13 @@ export const S = (description: string, extra: Record<string, unknown> = {}) => (
 export const TASK_REF = { type: ['integer', 'string'], description: 'The task number shown as #n, for example 12.' };
 const DUE = S('Due date or reminder: YYYY-MM-DD, YYYY-MM-DD HH:MM, or a word such as today, tomorrow, monday, nextweek.');
 const REPEAT = S('Repeat rule: daily, weekdays, weekly, monthly, yearly, or "every mon, thu", "every 2 weeks".');
+const TAGS = { type: 'array', items: { type: 'string' }, description: 'Tags that group tasks inside a space, such as "outreach". A new name joins the space\'s tags. See list_spaces.' };
+
+/** Tag names from a tool argument: a list, or one comma-separated string. */
+function tagList(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value.map(str) : str(value).split(',');
+  return [...new Set(raw.map(cleanTag).filter(Boolean))];
+}
 const SPACE = S('Space name (a named group of tasks and notes), for example Inbox.');
 export const DATA_TOOLS: WebTool[] = [
   {
@@ -242,6 +255,7 @@ export const DATA_TOOLS: WebTool[] = [
       space: SPACE,
       query: S('Only tasks whose text or notes contain this.'),
       due: S('Only tasks due in this window.', { enum: ['overdue', 'today', 'week'] }),
+      tag: S('Only tasks with this tag.'),
     }),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: (a) => {
@@ -249,6 +263,7 @@ export const DATA_TOOLS: WebTool[] = [
       const space = spaceId(a.space);
       const q = str(a.query).toLowerCase();
       const due = str(a.due);
+      const tag = cleanTag(str(a.tag));
       const today = ymd(new Date());
       const week = ymd(new Date(Date.now() + 7 * 864e5));
       const all = get(tasks);
@@ -257,6 +272,7 @@ export const DATA_TOOLS: WebTool[] = [
         if (status === 'done' && !t.done) return false;
         if (space && projectOf(t) !== space) return false;
         if (q && !`${t.text}\n${t.notes ?? ''}`.toLowerCase().includes(q)) return false;
+        if (tag && !t.tags?.includes(tag)) return false;
         if (due) {
           const d = t.due?.slice(0, 10);
           if (!d) return false;
@@ -283,6 +299,7 @@ export const DATA_TOOLS: WebTool[] = [
         due: DUE,
         repeat: REPEAT,
         notes: S('Free-form notes kept with the task.'),
+        tags: TAGS,
         subtaskOf: { type: ['integer', 'string'], description: 'Number of the parent task. Sub-tasks cannot have sub-tasks.' },
       },
       ['text'],
@@ -293,7 +310,7 @@ export const DATA_TOOLS: WebTool[] = [
       const due = str(a.due) ? dueValue(a.due) : undefined;
       const parent = str(a.subtaskOf) ? findTask(a.subtaskOf) : undefined;
       if (parent?.parentId) fail(`#${parent.no} is itself a sub-task, and sub-tasks cannot have sub-tasks`);
-      const t = addTask(text, { projectId: spaceId(a.space), parentId: parent?.id });
+      const t = addTask(text, { projectId: spaceId(a.space), parentId: parent?.id, tags: tagList(a.tags) });
       if (!t) fail('the task text was empty after removing its date words');
       if (due) setDue(t.id, due);
       if (str(a.repeat) && !setRepeat(t.id, str(a.repeat))) fail(`added #${t.no}, but cannot read the repeat rule "${str(a.repeat)}"`);
@@ -304,7 +321,7 @@ export const DATA_TOOLS: WebTool[] = [
   {
     name: 'update_task',
     title: 'Change a task',
-    description: 'Change a task: its text, due date, repeat rule, notes or space. Only the fields given are changed. Pass an empty string for due or repeat to clear it.',
+    description: 'Change a task: its text, due date, repeat rule, notes, tags or space. Only the fields given are changed. Pass an empty string for due or repeat to clear it, and an empty list for tags.',
     inputSchema: obj(
       {
         task: TASK_REF,
@@ -313,6 +330,7 @@ export const DATA_TOOLS: WebTool[] = [
         repeat: REPEAT,
         notes: S('Notes for the task.'),
         notesMode: S('replace swaps the old notes, append adds to their end.', { enum: ['replace', 'append'], default: 'replace' }),
+        tags: { ...TAGS, description: 'The task\'s tags, replacing the ones it has. [] removes them all.' },
         space: SPACE,
       },
       ['task'],
@@ -329,6 +347,7 @@ export const DATA_TOOLS: WebTool[] = [
         setTaskNotes(t.id, str(a.notesMode) === 'append' && t.notes ? `${t.notes.replace(/\s+$/, '')}\n${text}` : text);
       }
       if (space) moveTask(t.id, space);
+      if (a.tags !== undefined) setTaskTags(t.id, tagList(a.tags));
       return { updated: taskOut(findTask(t.no)) };
     },
   },
@@ -378,7 +397,7 @@ export const DATA_TOOLS: WebTool[] = [
   {
     name: 'list_spaces',
     title: 'List spaces',
-    description: 'List the spaces (named groups of tasks and notes) with how many open tasks and notes each holds.',
+    description: 'List the spaces (named groups of tasks and notes) with how many open tasks and notes each holds, and the tags each uses to group its tasks.',
     inputSchema: obj({}),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: () => ({
@@ -386,8 +405,27 @@ export const DATA_TOOLS: WebTool[] = [
         name: p.name,
         openTasks: get(tasks).filter((t) => !t.done && projectOf(t) === p.id).length,
         notes: get(notes).filter((n) => noteSpace(n) === p.id).length,
+        tags: tagsOf(p, get(tasks)),
       })),
     }),
+  },
+  {
+    name: 'set_space_tags',
+    title: 'Change a space\'s tags',
+    description:
+      'Add or remove the tags a space offers for grouping its tasks, for example "outreach", "content". Removing a tag takes it off that space\'s tasks too; the tasks stay. Use add_task or update_task with tags to tag a task.',
+    inputSchema: obj({ space: SPACE, add: { ...TAGS, description: 'Tags to add.' }, remove: { ...TAGS, description: 'Tags to remove.' } }, ['space']),
+    execute: (a) => {
+      const id = spaceId(a.space);
+      if (!id) fail('space is required');
+      const add = tagList(a.add);
+      const remove = tagList(a.remove);
+      if (!add.length && !remove.length) fail('give tags to add or remove');
+      addSpaceTags(id, add);
+      for (const t of remove) removeSpaceTag(id, t);
+      const p = get(projects).find((x) => x.id === id)!;
+      return { space: p.name, tags: tagsOf(p, get(tasks)) };
+    },
   },
   {
     name: 'add_space',
@@ -549,6 +587,7 @@ export const DATA_TOOLS: WebTool[] = [
               due: DUE,
               repeat: REPEAT,
               notes: S('Notes kept with the task.'),
+              tags: TAGS,
               subtasks: { type: 'array', items: { type: 'string' }, description: 'Sub-tasks, as plain text.' },
             },
             required: ['text'],
@@ -568,7 +607,7 @@ export const DATA_TOOLS: WebTool[] = [
       const added: number[] = [];
       const problems: string[] = [];
       items.forEach((it, i) => {
-        const t = addTask(str(it.text), { projectId: space });
+        const t = addTask(str(it.text), { projectId: space, tags: tagList(it.tags) });
         if (!t) {
           problems.push(`task ${i + 1} had no text`);
           return;

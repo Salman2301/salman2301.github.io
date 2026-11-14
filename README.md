@@ -44,6 +44,7 @@ Type `help` in the terminal to see every command.
   - **Tasks** (`todo`): tasks in spaces, sub-tasks, notes on tasks and spaces, a number for every task (`#12`, `todo focus 12`). Type `@` in a task or a note to link the other one, written as `[@task: #123]` or `[@note: Title]`; click a link to jump to it. Dates are written `[@date: 2026-11-28]` and `[@time: 2026-11-28 15:20]` (`@date`, `@time`, `@today`, `@tmrw`, `@monday` … `@sunday`, `@nextweek`, or pick one from a calendar). In a task a date sets its due date (`todo add pay rent @friday` works too); in a note it adds a reminder. The notes preview shows these as chips: tasks with a completed / active marker, dates with "in 3 days"; hover or right-click a chip for details and actions. Reminders show in the status-bar calendar, for all spaces or one, and pop a toast when due.
   - **Spaces** (`space work`, `space all`, or the status bar): group tasks and notes into spaces (Inbox is the default). Each tab is pinned to a space from the status bar (other tabs keep their own): it shows only that space's tasks, notes and reminders, in the space's own theme if it has one. Tasks move between spaces from their row (or `todo mv 12 work`). Rename, theme or delete a space from the same menu. Notes can be dragged to reorder.
   - **Screen time** (`screentime`, `open screentime`): how long you use the site, per day (7 or 30 days), and today by widget, space and hour. Counted only while the page is visible and you are active; kept in this browser.
+  - **Tags**: each space has its own tags to group its tasks (`#outreach`, `#content`). Type `#name` in a task to tag it (a new name joins the space's tags; `#12` is still a task number), or use the `#` menu on a task (`T`). The chips above the task input filter the list, and while one is picked new tasks get that tag. `+` adds a tag; pick a tag and press its `x` to remove it from the space.
   - **Repeating tasks**: `@daily`, `@weekdays`, `@weekly`, `@monthly`, `@yearly`, `@every monday`, `@every mon, wed`, `@every 2 weeks`, each with an optional time (`standup @daily 9:00`, `gym @every mon, wed 6pm`), or the repeat menu under a task's due date. Ticking one moves it to its next time (its sub-tasks open again) instead of finishing it, and the calendar shows the times ahead.
   - **Reminders** (`open reminders`): upcoming reminders grouped as overdue, today, tomorrow, this week and later; add one with `call mom @tmrw`.
   - **Calendar** (`calendar`, `cal week`): year, month, week and day views of your reminders. Pinch (touch or trackpad) or ctrl+scroll to zoom between them with an animated zoom into the spot you pinched; swipe or ←/→ for the next page. Click an hour in the day view to add a reminder there.
@@ -122,6 +123,7 @@ Everything is saved in your browser's local storage. Nothing is sent to a server
 | `S` / `N` | add a sub-task / open its notes |
 | `F` | focus on it: starts the pomodoro (again to stop) |
 | `M` | move it to another space |
+| `T` | tag or untag it |
 
 **Links, dates, reminders and repeats** (in task fields and notes)
 
@@ -185,7 +187,7 @@ The page offers what it holds as [WebMCP](https://webmachinelearning.github.io/w
 | everything | `get_overview` (start here: today, overdue, timer, music, panes), `search`, `get_stats`, `export_backup`, `undo_delete` |
 | tasks | `list_tasks`, `get_task`, `add_task`, `add_tasks` (many at once, with sub-tasks), `update_task`, `complete_task`, `focus_task`, `delete_task`, `clear_done_tasks` |
 | notes | `list_notes`, `read_note`, `create_note`, `update_note` (replace, append, prepend, move, pin), `edit_note` (find and replace a passage), `delete_note` |
-| spaces | `list_spaces`, `add_space`, `rename_space`, `delete_space`, `show_space` |
+| spaces | `list_spaces`, `add_space`, `rename_space`, `set_space_tags`, `delete_space`, `show_space` |
 | calendar | `list_reminders` |
 | focus | `control_pomodoro` (status, start, pause, reset, skip, minutes, task) |
 | music | `control_music` (status, play, pause, next, previous, station, volume), `list_stations` |
@@ -231,7 +233,7 @@ The address is `http://127.0.0.1:8787/mcp`. `--file` also takes the `salman2301-
 | everything | `get_overview` (start here), `search`, `get_stats`, `export_backup`, `undo_delete` |
 | tasks | `list_tasks`, `get_task`, `add_task`, `add_tasks`, `update_task`, `complete_task`, `focus_task`, `delete_task`, `clear_done_tasks` |
 | notes | `list_notes`, `read_note`, `create_note`, `update_note`, `edit_note`, `delete_note` |
-| spaces | `list_spaces`, `add_space`, `rename_space`, `delete_space` |
+| spaces | `list_spaces`, `add_space`, `rename_space`, `set_space_tags`, `delete_space` |
 | calendar | `list_reminders` |
 
 - The server reads the file, makes the change, and writes it back. The site loads the change when you come back to its tab, unless it has unsaved changes of its own; then `sync pull` or `sync push` decides.

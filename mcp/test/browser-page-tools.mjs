@@ -73,8 +73,8 @@ r = await call('set_theme', { theme: 'beige-nightmare' }); check('unknown theme 
 r = await call('set_theme', { mode: 'dark' }); check('set mode', r.ok?.mode === 'dark', J(r));
 r = await call('get_stats', { days: 3 }); check('get_stats', r.ok?.days?.length === 3 && r.ok.days[2].tasksAdded >= 5 && typeof r.ok.total.focusMinutes === 'number', J(r));
 r = await call('export_backup'); check('export_backup has tasks and notes', r.ok?.format && Array.isArray(r.ok.data['tasks:list']) && Array.isArray(r.ok.data['notes:list']), J(r));
-r = await call('run_command', { command: 'mcp' }); check('mcp lists 37 tools by group', /WebMCP is on: 37 tools/.test(r.ok?.output || '') && /tasks\s+list_tasks/.test(r.ok.output) && /music\s+control_music/.test(r.ok.output), J(r));
+r = await call('run_command', { command: 'mcp' }); check('mcp lists 38 tools by group', /WebMCP is on: 38 tools/.test(r.ok?.output || '') && /tasks\s+list_tasks/.test(r.ok.output) && /music\s+control_music/.test(r.ok.output), J(r));
 r = await call('run_command', { command: 'mcp log' }); check('mcp log shows calls and failures', /set_theme  \{"mode":"dark"\}/.test(r.ok?.output || '') && /no theme called/.test(r.ok.output), (r.ok?.output || '').slice(-300));
 const names = JSON.parse(await ev(`JSON.stringify(Object.keys(window.__tools))`));
-check('37 tools registered', names.length === 37, names.length);
+check('38 tools registered', names.length === 38, names.length);
 console.log(logs.join('\n')); console.log(fail ? fail + ' FAILED' : 'ALL PASSED'); done(fail ? 1 : 0);
