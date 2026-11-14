@@ -1,8 +1,9 @@
 import { get } from 'svelte/store';
-import { createNote, deleteNote, moveNote, noteSpace, notes, sortNotes, titleOf, togglePin, updateNote, type Note } from '../widgets/notes/store';
+import { createNote, deleteNote, moveNote, noteSpace, notes, setArchived, sortNotes, titleOf, togglePin, updateNote, type Note } from '../widgets/notes/store';
 import { snapshot } from './backup';
 import { resolveDateWord, ymd } from './dates';
 import { reminders } from './reminders';
+import { clearDoneTasks, deleteTask, noteOfTask, setTaskNote, taskNoteText } from './tasknotes';
 import { load } from './storage';
 import {
   activeTaskId,
@@ -16,13 +17,11 @@ import {
   projects,
   removeProject,
   removeSpaceTag,
-  removeTask,
   renameProject,
   renameTask,
   setActiveTask,
   setDue,
   setRepeat,
-  setTaskNotes,
   setTaskTags,
   tagsOf,
   taskByNo,
@@ -174,7 +173,10 @@ export function taskOut(t: Task) {
   const out: Record<string, unknown> = { number: t.no, text: t.text, done: t.done, space: spaceName(get(projects), projectOf(t)) };
   if (t.due) out.due = t.due;
   if (t.repeat) out.repeat = t.repeat;
-  if (t.notes) out.notes = t.notes;
+  const note = noteOfTask(t);
+  const text = note ? taskNoteText(note) : t.notes?.trim();
+  if (text) out.notes = text;
+  if (note) out.note = { id: note.id, title: titleOf(note), ...(note.archived ? { archived: true } : {}) };
   if (t.tags?.length) out.tags = t.tags;
   if (parent) out.subtaskOf = parent.no;
   const subs = list.filter((x) => x.parentId === t.id);
@@ -194,6 +196,9 @@ function noteOut(n: Note, withBody = false) {
     length: n.body.length,
   };
   if (n.pinned) out.pinned = true;
+  if (n.archived) out.archived = true;
+  const task = get(tasks).find((t) => t.noteId === n.id);
+  if (task) out.task = task.no;
   if (withBody) out.body = n.body;
   return out;
 }
@@ -271,7 +276,7 @@ export const DATA_TOOLS: WebTool[] = [
         if (status === 'open' && t.done) return false;
         if (status === 'done' && !t.done) return false;
         if (space && projectOf(t) !== space) return false;
-        if (q && !`${t.text}\n${t.notes ?? ''}`.toLowerCase().includes(q)) return false;
+        if (q && !`${t.text}\n${t.notes ?? ''}\n${taskNoteText(noteOfTask(t))}`.toLowerCase().includes(q)) return false;
         if (tag && !t.tags?.includes(tag)) return false;
         if (due) {
           const d = t.due?.slice(0, 10);
@@ -298,7 +303,7 @@ export const DATA_TOOLS: WebTool[] = [
         space: SPACE,
         due: DUE,
         repeat: REPEAT,
-        notes: S('Free-form notes kept with the task.'),
+        notes: S('Notes for the task. They go in a note of its own in the notes app, linked to the task.'),
         tags: TAGS,
         subtaskOf: { type: ['integer', 'string'], description: 'Number of the parent task. Sub-tasks cannot have sub-tasks.' },
       },
@@ -314,7 +319,7 @@ export const DATA_TOOLS: WebTool[] = [
       if (!t) fail('the task text was empty after removing its date words');
       if (due) setDue(t.id, due);
       if (str(a.repeat) && !setRepeat(t.id, str(a.repeat))) fail(`added #${t.no}, but cannot read the repeat rule "${str(a.repeat)}"`);
-      if (str(a.notes)) setTaskNotes(t.id, str(a.notes));
+      if (str(a.notes)) setTaskNote(t.id, str(a.notes));
       return { added: taskOut(taskByNo(t.no) ?? t) };
     },
   },
@@ -328,7 +333,7 @@ export const DATA_TOOLS: WebTool[] = [
         text: S('New text.'),
         due: DUE,
         repeat: REPEAT,
-        notes: S('Notes for the task.'),
+        notes: S('Notes for the task, kept in its linked note in the notes app (made if it has none).'),
         notesMode: S('replace swaps the old notes, append adds to their end.', { enum: ['replace', 'append'], default: 'replace' }),
         tags: { ...TAGS, description: 'The task\'s tags, replacing the ones it has. [] removes them all.' },
         space: SPACE,
@@ -342,10 +347,7 @@ export const DATA_TOOLS: WebTool[] = [
       if (str(a.text)) renameTask(t.id, str(a.text));
       if (a.due !== undefined) setDue(t.id, due);
       if (a.repeat !== undefined && !setRepeat(t.id, str(a.repeat) || null)) fail(`cannot read the repeat rule "${str(a.repeat)}"`);
-      if (a.notes !== undefined) {
-        const text = typeof a.notes === 'string' ? a.notes : '';
-        setTaskNotes(t.id, str(a.notesMode) === 'append' && t.notes ? `${t.notes.replace(/\s+$/, '')}\n${text}` : text);
-      }
+      if (a.notes !== undefined) setTaskNote(t.id, typeof a.notes === 'string' ? a.notes : '', str(a.notesMode) === 'append');
       if (space) moveTask(t.id, space);
       if (a.tags !== undefined) setTaskTags(t.id, tagList(a.tags));
       return { updated: taskOut(findTask(t.no)) };
@@ -367,14 +369,18 @@ export const DATA_TOOLS: WebTool[] = [
   {
     name: 'delete_task',
     title: 'Delete a task',
-    description: 'Delete a task and its sub-tasks. Only do it when the user asked for it. undo_delete puts it back until the page is reloaded.',
+    description: 'Delete a task and its sub-tasks. Their notes are archived, not deleted. Only do it when the user asked for it. undo_delete puts it back until the page is reloaded.',
     inputSchema: obj({ task: TASK_REF }, ['task']),
     annotations: { consequentialHint: true },
     execute: (a) => {
       const t = findTask(a.task);
       const gone = get(tasks).filter((x) => x.id === t.id || x.parentId === t.id);
-      removeTask(t.id);
-      binned(`task #${t.no} "${t.text}"`, () => tasks.update((list) => [...list, ...gone.filter((g) => !list.some((x) => x.id === g.id))]));
+      const archived = gone.map((g) => noteOfTask(g)).filter((n): n is Note => !!n && !n.archived);
+      deleteTask(t.id);
+      binned(`task #${t.no} "${t.text}"`, () => {
+        tasks.update((list) => [...list, ...gone.filter((g) => !list.some((x) => x.id === g.id))]);
+        for (const n of archived) setArchived(n.id, false);
+      });
       return { deleted: { number: t.no, text: t.text, subtasksDeleted: gone.length - 1 }, undo: 'undo_delete puts it back' };
     },
   },
@@ -441,13 +447,14 @@ export const DATA_TOOLS: WebTool[] = [
   {
     name: 'list_notes',
     title: 'List notes',
-    description: 'List the markdown notes: id, title, space and when each last changed. Use read_note for the text.',
-    inputSchema: obj({ space: SPACE, query: S('Only notes whose text contains this.') }),
+    description: 'List the markdown notes: id, title, space and when each last changed. Archived notes are left out unless archived is true. Use read_note for the text.',
+    inputSchema: obj({ space: SPACE, query: S('Only notes whose text contains this.'), archived: { type: 'boolean', description: 'true lists the archived notes instead.', default: false } }),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: (a) => {
       const space = spaceId(a.space);
       const q = str(a.query).toLowerCase();
-      const list = sortNotes(get(notes)).filter((n) => (!space || noteSpace(n) === space) && (!q || n.body.toLowerCase().includes(q)));
+      const arch = a.archived === true;
+      const list = sortNotes(get(notes)).filter((n) => !!n.archived === arch && (!space || noteSpace(n) === space) && (!q || n.body.toLowerCase().includes(q)));
       return { count: list.length, notes: list.map((n) => noteOut(n)) };
     },
   },
@@ -474,7 +481,7 @@ export const DATA_TOOLS: WebTool[] = [
     name: 'update_note',
     title: 'Change a note',
     description:
-      'Change a note. body with mode "replace" swaps the whole text, "append" adds to the end, "prepend" adds right under the title. space moves it to another space, pinned pins or unpins it. For a small change inside a long note, use edit_note instead.',
+      'Change a note. body with mode "replace" swaps the whole text, "append" adds to the end, "prepend" adds right under the title. space moves it to another space, pinned pins or unpins it, archived archives it or brings it back. For a small change inside a long note, use edit_note instead.',
     inputSchema: obj(
       {
         note: S('Note id or title.'),
@@ -482,6 +489,7 @@ export const DATA_TOOLS: WebTool[] = [
         mode: S('How body is applied.', { enum: ['replace', 'append', 'prepend'], default: 'replace' }),
         space: SPACE,
         pinned: { type: 'boolean', description: 'Pin the note to the top of the list, or unpin it.' },
+        archived: { type: 'boolean', description: 'true archives the note (it leaves the note list), false brings it back.' },
       },
       ['note'],
     ),
@@ -496,11 +504,12 @@ export const DATA_TOOLS: WebTool[] = [
         const next =
           mode === 'append' ? `${n.body.replace(/\s+$/, '')}\n\n${body}` : mode === 'prepend' ? `${first}\n\n${body}\n${rest.join('\n').replace(/^\n+/, '\n')}` : body;
         updateNote(n.id, next);
-      } else if (a.space === undefined && a.pinned === undefined) {
-        fail('give body, space or pinned');
+      } else if (a.space === undefined && a.pinned === undefined && a.archived === undefined) {
+        fail('give body, space, pinned or archived');
       }
       if (space) moveNote(n.id, space);
       if (typeof a.pinned === 'boolean' && !!n.pinned !== a.pinned) togglePin(n.id);
+      if (typeof a.archived === 'boolean') setArchived(n.id, a.archived);
       return { updated: noteOut(findNoteBy(n.id)) };
     },
   },
@@ -614,7 +623,7 @@ export const DATA_TOOLS: WebTool[] = [
         }
         if (dues[i]) setDue(t.id, dues[i]);
         if (str(it.repeat) && !setRepeat(t.id, str(it.repeat))) problems.push(`#${t.no}: cannot read the repeat rule "${str(it.repeat)}"`);
-        if (str(it.notes)) setTaskNotes(t.id, str(it.notes));
+        if (str(it.notes)) setTaskNote(t.id, str(it.notes));
         for (const sub of Array.isArray(it.subtasks) ? it.subtasks : []) if (str(sub)) addTask(str(sub), { parentId: t.id });
         added.push(t.no);
       });
@@ -624,7 +633,7 @@ export const DATA_TOOLS: WebTool[] = [
   {
     name: 'clear_done_tasks',
     title: 'Clear finished tasks',
-    description: 'Remove every finished task, in one space or everywhere. Open sub-tasks of a finished task stay. Only do it when the user asked for it. undo_delete puts them back.',
+    description: 'Remove every finished task, in one space or everywhere, and archive their notes. Open sub-tasks of a finished task stay. Only do it when the user asked for it. undo_delete puts them back.',
     inputSchema: obj({ space: SPACE }),
     annotations: { consequentialHint: true },
     execute: (a) => {
@@ -632,15 +641,17 @@ export const DATA_TOOLS: WebTool[] = [
       const before = get(tasks);
       const done = new Set(before.filter((t) => t.done && (!space || projectOf(t) === space)).map((t) => t.id));
       if (!done.size) return { cleared: 0 };
-      tasks.set(before.filter((t) => !done.has(t.id)).map((t) => (t.parentId && done.has(t.parentId) ? { ...t, parentId: undefined } : t)));
-      binned(`${done.size} finished tasks`, () =>
+      const archived = before.filter((t) => done.has(t.id)).map((t) => noteOfTask(t)).filter((n): n is Note => !!n && !n.archived);
+      clearDoneTasks(space);
+      binned(`${done.size} finished tasks`, () => {
+        for (const n of archived) setArchived(n.id, false);
         tasks.update((list) => {
           const now = new Map(list.map((t) => [t.id, t] as const));
           const made = list.filter((t) => !before.some((b) => b.id === t.id));
           return [...before.map((b) => (done.has(b.id) ? b : { ...(now.get(b.id) ?? b), parentId: b.parentId })).filter((b) => done.has(b.id) || now.has(b.id)), ...made];
-        }),
-      );
-      return { cleared: done.size, undo: 'undo_delete puts them back' };
+        });
+      });
+      return { cleared: done.size, ...(archived.length ? { notesArchived: archived.map((n) => titleOf(n)) } : {}), undo: 'undo_delete puts them back' };
     },
   },
   {

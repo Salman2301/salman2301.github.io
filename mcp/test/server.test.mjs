@@ -53,6 +53,18 @@ r = await c.call('list_tasks', { tag: 'outreach' }); check('list_tasks by tag', 
 r = await c.call('set_space_tags', { space: 'Inbox', add: ['content'], remove: ['visit'] }); check('set_space_tags adds and removes, and takes a removed tag off tasks', r.ok?.tags?.join() === 'outreach,content' && disk().data['tasks:list'].find((t) => t.no === tagNo).tags.join() === 'outreach', JSON.stringify(r));
 r = await c.call('update_task', { task: tagNo, tags: [] }); check('update_task with no tags clears them', !('tags' in r.ok?.updated) && !('tags' in disk().data['tasks:list'].find((t) => t.no === tagNo)), JSON.stringify(r));
 await c.call('delete_task', { task: tagNo });
+r = await c.call('add_task', { text: 'Visit the gym', notes: 'Owner in 10-11am' }); const nNo = r.ok?.added?.number; const nid = r.ok?.added?.note?.id;
+check('task notes go to a note of their own, linked to the task', r.ok?.added?.notes === 'Owner in 10-11am' && nid && disk().data['tasks:list'].find((t) => t.no === nNo).noteId === nid && disk().data['notes:list'].find((n) => n.id === nid).body === `# Visit the gym\n\n[@task: #${nNo}]\n\nOwner in 10-11am`, JSON.stringify(r));
+r = await c.call('update_task', { task: nNo, notes: 'Called back', notesMode: 'append' }); check('appending to task notes writes the same note', r.ok?.updated?.notes === 'Owner in 10-11am\nCalled back' && disk().data['notes:list'].filter((n) => /Visit the gym/.test(n.body)).length === 1, JSON.stringify(r));
+r = await c.call('list_notes'); check('the task note is in the note list, with its task', r.ok?.notes?.some((n) => n.id === nid && n.task === nNo), JSON.stringify(r));
+await c.call('complete_task', { task: nNo }); r = await c.call('clear_done_tasks');
+check('clearing a finished task archives its note', r.ok?.notesArchived?.join() === 'Visit the gym' && disk().data['notes:list'].find((n) => n.id === nid).archived > 0, JSON.stringify(r));
+r = await c.call('list_notes'); const r2 = await c.call('list_notes', { archived: true });
+check('archived notes leave the list and have their own', !r.ok.notes.some((n) => n.id === nid) && r2.ok?.notes?.some((n) => n.id === nid && n.archived), JSON.stringify(r2));
+r = await c.call('undo_delete'); check('undo brings the task and the note back', disk().data['tasks:list'].some((t) => t.no === nNo) && !disk().data['notes:list'].find((n) => n.id === nid).archived, JSON.stringify(r));
+r = await c.call('update_note', { note: nid, archived: true }); check('update_note archives a note', r.ok?.updated?.archived === true, JSON.stringify(r));
+r = await c.call('update_note', { note: nid, archived: false }); check('and brings it back', !r.ok?.updated?.archived, JSON.stringify(r));
+await c.call('delete_task', { task: nNo }); check('deleting a task archives its note, not deletes it', disk().data['notes:list'].find((n) => n.id === nid)?.archived > 0);
 r = await c.call('get_stats', { days: 2 }); check('get_stats', r.ok?.days?.length === 2 && r.ok.days[1].tasksAdded >= 4, JSON.stringify(r));
 r = await c.call('export_backup'); check('export_backup', r.ok?.format === 'salman2301-workspace' && r.ok.data['tasks:list'].length === 5, JSON.stringify(r).slice(0, 200));
 r = await c.call('complete_task', { task: 999 }); check('errors come back as tool errors', /no task #999/.test(r.err || ''), JSON.stringify(r));
