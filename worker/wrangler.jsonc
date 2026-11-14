@@ -1,0 +1,25 @@
+{
+  // Server for the workspace: one JSON document, one revision per write.
+  // Deploy with `npm run deploy`; see worker/README.md.
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "s2301-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-13",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "s2301",
+      "database_id": "462c7dfb-6106-4440-a198-eda548498673",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    // Origins allowed to call this from a browser: the live site, `vite dev`,
+    // and the port the browser tests preview on.
+    "ALLOWED_ORIGINS": "https://salman2301.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4317"
+  }
+}

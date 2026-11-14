@@ -120,3 +120,8 @@ dist
 
 # built by the local MCP server on start
 mcp/.build
+
+# the sync worker: local wrangler state and secrets
+worker/.wrangler
+worker/.dev.vars
+worker/node_modules

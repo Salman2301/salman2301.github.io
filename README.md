@@ -58,12 +58,12 @@ Type `help` in the terminal to see every command.
   - **Snake Arena** (`play arena`): steer with the mouse or A/D, hold click or W to boost (it costs length), eat to grow, and make other snakes run into you. Nine bots look ahead for bodies and walls, keep to open space, run from bigger snakes and hunt smaller ones by running alongside and cutting in front.
   - **Car Racing**: other cars signal before they change lanes and glide across, never crash into each other, and never line up across all three lanes, so there is always a way through.
 - **Search** (`⌘K` / `Ctrl+K`, `Alt+K`, or `search`): one box over tasks, notes, commands, widgets, games, themes, radio stations and spaces. `#` narrows to tasks (`#12` jumps to task 12), `/` to notes, `>` to commands; `theme nord` or `>radio fip` runs the line in a terminal.
-- **Backup and sync**: `backup` saves everything (tasks, notes, spaces, settings, layout) to a JSON file and `backup import` loads one, in any browser. `sync folder` keeps the same data in one file, `salman2301-workspace.json`, in a folder you pick; put that folder in iCloud Drive, Dropbox, Google Drive, OneDrive or Syncthing and every computer that picks it shares your data. Changes save a few seconds after you make them, a newer file loads when you open the site, and if both sides changed you choose with `sync pull` or `sync push`. Nothing goes to a server. Folder sync needs Chrome, Edge, Brave or Opera on a computer; `sync --help` explains it all.
+- **Backup and sync**: `backup` saves everything (tasks, notes, spaces, settings, layout) to a JSON file and `backup import` loads one, in any browser. `sync folder` keeps the same data in one file, `salman2301-workspace.json`, in a folder you pick; put that folder in iCloud Drive, Dropbox, Google Drive, OneDrive or Syncthing and every computer that picks it shares your data. `sync cloud <address> <token>` keeps the same document on the Worker in [`worker/`](worker/README.md) instead, which also works on phones. Changes save a few seconds after you make them, newer data loads when you open the site, and if both sides changed you choose with `sync pull` or `sync push`. Folder sync needs Chrome, Edge, Brave or Opera on a computer; the server works anywhere; `sync --help` explains both.
 - **Help and feedback**: any command explains itself with `--help` (or `help <command>`). `issue` opens a GitHub issue with your browser and screen size filled in.
 - **Installable app**: install it from the browser (or run `install`) for its own window and offline use; reminders become system notifications while it runs in the background.
 - **Extras**: 26 themes, including popular VS Code ones (One Dark Pro, GitHub, Night Owl, Monokai Pro, Ayu, Palenight, Cobalt2, Shades of Purple), with a system / dark / light switch in the status bar (`theme system`), share links that recreate a layout (`share`), screensavers in your theme that fill the pane (`screensaver matrix|stars|pipes|bounce`, `Alt+S`, or after idle minutes), `hack` (a fake breach in the terminal that ends in digital rain over the pane), a tmux-style status bar, tab completion with inline suggestions, command chaining with `&&`.
 
-Everything is saved in your browser's local storage. Nothing is sent to a server; `sync` only writes to a folder on your own computer.
+Everything is saved in your browser's local storage. Nothing is sent to a server: `sync folder` writes to a folder on your own computer, and `sync cloud` writes only to the Worker you deploy yourself.
 
 ## Themes
 
@@ -171,14 +171,18 @@ Below 720px wide the workspace switches to a phone layout:
 - **Terminal key row**: `tab`, `↑`, `↓`, `→`, `esc`, `^C`, `^L` and `^U` sit under the prompt, since phone keyboards do not have them.
 - Games keep their on-screen pad, and the calendar keeps pinch to zoom and its own swipe for the next page (swipe on the pane's title bar or use the chips to change pane there).
 
-### Sync between computers
+### Sync between computers and phones
 
-Everything lives in your browser. To use the same tasks, notes and settings on another computer:
+Everything lives in your browser. To use the same tasks, notes and settings on another device, pick one of two ways:
 
-1. Run `sync folder` and pick a folder that a sync app shares: iCloud Drive, Dropbox, Google Drive, OneDrive or Syncthing.
-2. On the other computer, open the site, run `sync folder` and pick the same folder.
+**The sync server (works on phones too).** The Worker in [`worker/`](worker/README.md) holds one copy for all your devices:
 
-The data is one file, `salman2301-workspace.json`. Changes are written a few seconds after you make them, and a newer file loads when you open the site or come back to it. If both sides changed, nothing is overwritten: run `sync pull` to use the folder's copy or `sync push` to keep this one. `sync` shows the status, `sync auto off` makes it manual, and `sync off` stops. If the browser asks again on a later visit, click **⟳ sync folder** in the status bar. Folder sync needs Chrome, Edge, Brave or Opera on a computer; `sync --help` explains it all.
+1. Run `sync cloud <address> <token>` on the device whose data you want to keep (the address is in `worker/README.md`; the token is the `SYNC_TOKEN` you set).
+2. On every other device, open the site and run the same line, then `sync pull` to take the server's copy.
+
+**A folder (computers only).** Run `sync folder` and pick a folder a sync app shares — iCloud Drive, Dropbox, Google Drive, OneDrive or Syncthing. On the other computer, run `sync folder` and pick the same folder.
+
+Either way the data is one document, `salman2301-workspace.json`. Changes are written a few seconds after you make them, and newer data loads when you open the site or come back to it. If both sides changed, nothing is overwritten: run `sync pull` to use the other copy or `sync push` to keep this one. `sync` shows the status (`sync cloud` shows the server revision), `sync auto off` makes it manual, and `sync off` stops. If the browser asks again on a later visit, click **⟳ sync folder** in the status bar. Folder sync needs Chrome, Edge, Brave or Opera on a computer; the server also works in Safari and on phones. `sync --help` explains it all.
 
 ### Let an AI agent use it (WebMCP)
 
@@ -203,16 +207,18 @@ The page offers what it holds as [WebMCP](https://webmachinelearning.github.io/w
 
 ### Local MCP server (Claude Code and other MCP clients)
 
-The server in `mcp/` lets an MCP client read and change your tasks, notes, spaces and reminders in the same file the site syncs. Turn on `sync folder` first, then add the server (replace `<repo>` with the folder this repo is in, and `<sync folder>` with the folder you picked):
+The server in `mcp/` lets an MCP client read and change your tasks, notes, spaces and reminders in the same data the site syncs. Either turn on `sync folder` and point it at the folder, or give it the cloud server (replace `<repo>`, `<sync folder>`, `<address>` and `<token>`):
 
 ```sh
 claude mcp add s2301 -- node <repo>/mcp/server.mjs --file <sync folder>
+claude mcp add s2301 -- node <repo>/mcp/server.mjs --cloud <address> --token <token>
 ```
 
 Or serve it over HTTP on your computer:
 
 ```sh
 node <repo>/mcp/server.mjs --file <sync folder> --http --port 8787
+node <repo>/mcp/server.mjs --cloud <address> --token <token> --http --port 8787
 ```
 
 Any client that starts a server from a command works the same way. Where it asks for a JSON file with an `mcpServers` entry:
@@ -228,7 +234,7 @@ Any client that starts a server from a command works the same way. Where it asks
 }
 ```
 
-The address is `http://127.0.0.1:8787/mcp`. `--file` also takes the `salman2301-workspace.json` file itself. `--read-only` offers only the tools that read. `node <repo>/mcp/server.mjs --help` lists the options.
+The address is `http://127.0.0.1:8787/mcp`. `--file` also takes the `salman2301-workspace.json` file itself. `--cloud` reads the token from `--token` or `SYNC_TOKEN`. `--read-only` offers only the tools that read. `node <repo>/mcp/server.mjs --help` lists the options.
 
 | group | tools |
 | --- | --- |

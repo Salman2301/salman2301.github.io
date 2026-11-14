@@ -1,22 +1,27 @@
 import { get } from 'svelte/store';
 import { parseBackup, restore, snapshot, summarize, type Backup } from './backup';
+import * as cloud from './cloud';
 import { notify } from './notify';
 import { setStatus } from './status';
 import { onStorageChange, persisted } from './storage';
 
 /**
- * Folder sync: everything this site keeps (the same data as a backup) is
- * written to one file, salman2301-workspace.json, in a folder you pick on
- * your computer. Put that folder in iCloud Drive, Dropbox, Google Drive,
- * OneDrive or Syncthing, and every computer that picks the same folder
- * shares your tasks, notes and settings. Nothing goes to a server of ours.
+ * Sync: everything this site keeps (the same data as a backup) is written to
+ * one file, salman2301-workspace.json, and every device that points at the
+ * same place shares your tasks, notes and settings. Two places work:
  *
- * - changes are written to the file a few seconds after you make them
- * - when the page opens or comes back into view, a newer file (written by
- *   another computer) is loaded, unless this browser has unsaved changes of
- *   its own: then you choose with `sync pull` or `sync push`
+ * - a folder you pick on this computer (`sync folder`): put it in iCloud
+ *   Drive, Dropbox, Google Drive, OneDrive or Syncthing. Needs the File System
+ *   Access API, so desktop Chromium only, and nothing goes to a server of ours.
+ * - the Worker in `worker/` (`sync cloud <address> <token>`): works on phones
+ *   too, and is the one to use when a folder is not an option.
  *
- * Needs the File System Access API: Chrome, Edge, Brave, Opera on desktop.
+ * Either way:
+ * - changes are written a few seconds after you make them
+ * - when the page opens or comes back into view, newer data (written by
+ *   another device) is loaded, unless this browser has unsaved changes of its
+ *   own: then you choose with `sync pull` or `sync push`
+ *
  * Elsewhere `backup` and `backup import` move the same file by hand.
  */
 
@@ -24,10 +29,18 @@ export const SYNC_FILE = 'salman2301-workspace.json';
 export const ISSUES_URL = 'https://github.com/Salman2301/salman2301.github.io/issues';
 
 export interface SyncState {
-  /** The folder's name, for display ('' when not set up). */
+  /** Where it syncs: a folder, our Worker, or nowhere yet. */
+  kind: '' | 'folder' | 'cloud';
+  /** The folder's name, or the server's host, for display. */
   folder: string;
+  /** The server, when `kind` is cloud. */
+  url: string;
+  /** The server's token. Kept in a `sync:` key, so it never rides in a backup. */
+  token: string;
+  /** The server revision this browser last wrote or read. */
+  rev: number;
   auto: boolean;
-  /** lastModified of the file after our last write or read. */
+  /** lastModified of the file, or updatedAt on the server, after our last write or read. */
   fileAt: number;
   /** Local changes not written yet. */
   dirty: boolean;
@@ -35,9 +48,15 @@ export interface SyncState {
   lastSync: number;
 }
 
-const EMPTY: SyncState = { folder: '', auto: true, fileAt: 0, dirty: false, lastSync: 0 };
+const EMPTY: SyncState = { kind: '', folder: '', url: '', token: '', rev: 0, auto: true, fileAt: 0, dirty: false, lastSync: 0 };
 export const syncState = persisted<SyncState>('sync:folder', EMPTY, 0);
 const patch = (p: Partial<SyncState>) => syncState.update((s) => ({ ...s, ...p }));
+
+/** A folder picked before `kind` existed is still a folder. */
+const kindOf = (s: SyncState): '' | 'folder' | 'cloud' => (s.kind ? s.kind : s.folder ? 'folder' : '');
+
+/** Whether anything is set up. */
+export const connected = (s: SyncState = get(syncState)) => (kindOf(s) === 'cloud' ? !!(s.url && s.token) : !!s.folder);
 
 /** Keys that change on their own all the time; they ride along but do not count as "you changed something". */
 const QUIET = /^(sync:|screentime:|pomodoro:state|timer:|radio$|reminders:fired|terminal:history|workspace:)/;
@@ -153,7 +172,7 @@ export async function chooseFolder(): Promise<ConnectResult> {
   }
   handle = h;
   await idb('readwrite', (s) => s.put(h, 'folder'));
-  patch({ folder: h.name, fileAt: 0, dirty: true });
+  patch({ kind: 'folder', folder: h.name, url: '', token: '', rev: 0, fileAt: 0, dirty: true });
   const found = await readFile(h);
   if (found && dataKey(found.backup) !== dataKey(snapshot())) {
     // Wait for the user's choice: neither side is overwritten yet.
@@ -164,11 +183,39 @@ export async function chooseFolder(): Promise<ConnectResult> {
 }
 
 /**
+ * Point this browser at a sync server (`worker/` in this repo) and take its
+ * copy. When the server already has other data, nothing is written until the
+ * user picks: `sync pull` or `sync push`.
+ */
+export async function connectCloud(address: string, token: string): Promise<ConnectResult> {
+  const url = cloud.baseUrl(address);
+  const clean = token.trim();
+  if (!clean) throw new SyncError('no token: run "sync cloud <address> <token>"');
+  await cloud.check(url, clean);
+  const remote = await cloud.read(url, clean);
+  const label = new URL(url).host;
+  patch({ kind: 'cloud', folder: label, url, token: clean, rev: remote?.rev ?? 0, fileAt: remote ? remote.updatedAt : 0, dirty: true });
+  if (remote && dataKey(remote.doc) !== dataKey(snapshot())) {
+    // Two copies, one choice: neither side is written yet.
+    patch({ fileAt: 0 });
+    return { folder: label, existing: summarize(remote.doc) };
+  }
+  if (remote) {
+    patch({ dirty: false, lastSync: Date.now() });
+    return { folder: label };
+  }
+  await pushCloud();
+  return { folder: label };
+}
+
+/**
  * Write this browser's data to the folder. `auto` is set by the timers: then a
  * file that changed since this browser last synced is not overwritten; the
  * user decides with `sync pull` or `sync push`.
  */
 export async function push(ask = true, auto = false): Promise<void> {
+  const state = get(syncState);
+  if (kindOf(state) === 'cloud') return pushCloud(auto);
   const h = await folder(ask);
   if (auto) {
     let cur: File | null = null;
@@ -190,6 +237,7 @@ export async function push(ask = true, auto = false): Promise<void> {
 
 /** Replace this browser's data with the folder's file, then reload. */
 export async function pull(ask = true): Promise<void> {
+  if (kindOf(get(syncState)) === 'cloud') return pullCloud();
   const h = await folder(ask);
   const found = await readFile(h);
   if (!found) throw new SyncError(`there is no ${SYNC_FILE} in the folder yet: run "sync push"`);
@@ -207,6 +255,73 @@ export async function pull(ask = true): Promise<void> {
     /* ignore */
   }
   location.reload();
+}
+
+/* ------------------------------------------------------------ the server */
+
+/** A short label for this device, for the server's revision list. */
+function deviceName(): string {
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
+  const system = /iPhone|iPad|iPod/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'device';
+  const browser = /Firefox/.test(ua) ? 'Firefox' : /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'browser';
+  return `${system} · ${browser}`;
+}
+
+/**
+ * Write to the server. `auto` runs from the timer: when another device wrote
+ * in between, it only says so. A person who typed `sync push` means it.
+ */
+async function pushCloud(auto = false): Promise<void> {
+  const s = get(syncState);
+  if (!s.url || !s.token) throw new SyncError('no cloud sync yet: run "sync cloud <address> <token>"');
+  let res = await cloud.write(s.url, s.token, s.rev, snapshot(), deviceName());
+  if ('conflict' in res) {
+    if (auto) return newerNotice();
+    res = await cloud.write(s.url, s.token, s.rev, snapshot(), deviceName(), true);
+    if ('conflict' in res) throw new SyncError('the server changed again while saving: run "sync push" once more');
+  }
+  patch({ rev: res.rev, fileAt: res.updatedAt, dirty: false, lastSync: Date.now() });
+  setStatus('sync', null);
+}
+
+/** Replace this browser's data with the server's copy, then reload. */
+async function pullCloud(): Promise<void> {
+  const s = get(syncState);
+  if (!s.url || !s.token) throw new SyncError('no cloud sync yet: run "sync cloud <address> <token>"');
+  const remote = await cloud.read(s.url, s.token);
+  if (!remote) throw new SyncError('nothing is on the server yet: run "sync push"');
+  const next = { rev: remote.rev, fileAt: remote.updatedAt, dirty: false, lastSync: Date.now() };
+  if (dataKey(remote.doc) === dataKey(snapshot())) {
+    patch(next);
+    return;
+  }
+  restore(remote.doc);
+  try {
+    // storage is frozen once restore starts: write the sync state by hand
+    localStorage.setItem('s2301:sync:folder', JSON.stringify({ ...get(syncState), ...next }));
+    sessionStorage.setItem('s2301:synced', summarize(remote.doc));
+  } catch {
+    /* ignore */
+  }
+  location.reload();
+}
+
+/** Load a newer revision from the server, when this browser has nothing unsaved. */
+async function checkCloud(): Promise<void> {
+  const s = get(syncState);
+  if (!s.url || !s.token || !s.auto) return;
+  if (Date.now() - lastCheck < 5000) return;
+  lastCheck = Date.now();
+  let remote: Awaited<ReturnType<typeof cloud.read>>;
+  try {
+    remote = await cloud.read(s.url, s.token);
+  } catch (err) {
+    return failed(err);
+  }
+  if (!remote || remote.rev <= s.rev) return;
+  if (dataKey(remote.doc) === dataKey(snapshot())) return patch({ rev: remote.rev, fileAt: remote.updatedAt });
+  if (get(syncState).dirty) return newerNotice();
+  await pullCloud().catch(failed);
 }
 
 /** Stop syncing. The file stays in the folder. */
@@ -228,6 +343,13 @@ export function setAuto(on: boolean) {
 
 /** Ask for permission again (from a click) and catch up. */
 export async function reconnect(): Promise<void> {
+  if (kindOf(get(syncState)) === 'cloud') {
+    setStatus('sync', null);
+    lastCheck = 0;
+    await checkCloud();
+    schedulePush();
+    return;
+  }
   await folder(true);
   setStatus('sync', null);
   lastCheck = 0;
@@ -258,7 +380,7 @@ function askAgain() {
 
 function schedulePush() {
   const s = get(syncState);
-  if (!s.folder || !s.auto || !s.dirty) return;
+  if (!connected(s) || !s.auto || !s.dirty) return;
   // Never overwrite a file this browser has not synced with yet: `sync pull` or `sync push` decides.
   if (!s.fileAt) return;
   if (pushTimer) clearTimeout(pushTimer);
@@ -268,10 +390,10 @@ function schedulePush() {
   }, PUSH_DELAY);
 }
 
-/** The folder's file is newer than this browser's last sync, and this browser has changes too. */
+/** The other copy is newer than this browser's last sync, and this browser has changes too. */
 function newerNotice() {
-  notify('Sync: the folder has newer data, and so does this browser', {
-    body: 'run "sync pull" to use the folder\'s copy, or "sync push" to keep this one',
+  notify('Sync: the other copy has newer data, and so does this browser', {
+    body: 'run "sync pull" to use that copy, or "sync push" to keep this one',
     durationMs: 15_000,
   });
 }
@@ -281,6 +403,7 @@ let lastCheck = 0;
 /** Load a newer file from the folder, when this browser has nothing unsaved. */
 async function checkFile() {
   const s = get(syncState);
+  if (kindOf(s) === 'cloud') return checkCloud();
   if (!s.folder || !s.auto) return;
   if (Date.now() - lastCheck < 5000) return;
   lastCheck = Date.now();
@@ -312,7 +435,7 @@ export function startSync() {
     const synced = sessionStorage.getItem('s2301:synced');
     if (synced) {
       sessionStorage.removeItem('s2301:synced');
-      notify('Loaded from your sync folder', { body: synced, tone: 'success' });
+      notify('Loaded from sync', { body: synced, tone: 'success' });
     }
   } catch {
     /* ignore */

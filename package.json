@@ -7,6 +7,9 @@
     "serve": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "mcp": "node mcp/server.mjs",
+    "cloud": "npm --prefix worker run dev",
+    "cloud:deploy": "npm --prefix worker run deploy",
+    "cloud:test": "npm --prefix worker test",
     "format": "prettier --write .",
     "format:watch": "onchange \"**/*\" -- prettier --write --ignore-unknown {{changed}}"
   },

@@ -9,8 +9,12 @@
  * runs the site's own task and note code on it, and writes it back if
  * something changed. The open page loads the new file when you come back to it.
  *
+ * With --cloud it uses the sync server from `worker/` instead, so it sees what
+ * a phone and a laptop both write.
+ *
  *   node mcp/server.mjs --file ~/Documents/workspace          over stdio (the harness starts it)
  *   node mcp/server.mjs --file ~/Documents/workspace --http   on http://127.0.0.1:8787/mcp
+ *   node mcp/server.mjs --cloud https://host --token <token>  the sync server
  *
  * No dependencies beyond the repo's own (esbuild, which comes with vite).
  */
@@ -30,10 +34,20 @@ const PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 /* ------------------------------------------------------------------ options */
 
 function options(argv) {
-  const out = { file: process.env.WORKSPACE_FILE || '', http: false, port: 8787, readOnly: false, help: false };
+  const out = {
+    file: process.env.WORKSPACE_FILE || '',
+    cloud: process.env.WORKSPACE_URL || '',
+    token: process.env.SYNC_TOKEN || '',
+    http: false,
+    port: 8787,
+    readOnly: false,
+    help: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--file' || a === '--dir' || a === '-f') out.file = argv[++i] ?? '';
+    else if (a === '--cloud' || a === '--url') out.cloud = argv[++i] ?? '';
+    else if (a === '--token') out.token = argv[++i] ?? '';
     else if (a === '--http') out.http = true;
     else if (a === '--port') {
       out.http = true;
@@ -46,18 +60,22 @@ function options(argv) {
   return out;
 }
 
-const USAGE = `Local MCP server for your workspace (tasks, notes, spaces, reminders).
+const USAGE = `MCP server for your workspace (tasks, notes, spaces, reminders).
 
   node mcp/server.mjs --file <sync folder or file> [--http] [--port 8787] [--read-only]
+  node mcp/server.mjs --cloud <address> [--token <token>] [--http] [--port 8787] [--read-only]
 
   --file <path>   the folder you picked with "sync folder" on the site, or the
                   ${SYNC_FILE} inside it. Also read from WORKSPACE_FILE.
+  --cloud <url>   the sync server from worker/ instead of a file. The token
+                  comes from --token or SYNC_TOKEN.
   --http          serve on http://127.0.0.1:<port>/mcp instead of stdio
   --port <n>      port for --http (default 8787)
   --read-only     offer only the tools that read
 
 Add it to Claude Code:
-  claude mcp add s2301 -- node ${join(HERE, 'server.mjs')} --file <sync folder>`;
+  claude mcp add s2301 -- node ${join(HERE, 'server.mjs')} --file <sync folder>
+  claude mcp add s2301 -- node ${join(HERE, 'server.mjs')} --cloud <address> --token <token>`;
 
 function die(message) {
   process.stderr.write(`${message}\n`);
@@ -137,13 +155,74 @@ function writeWorkspace(path, backup) {
   renameSync(tmp, path);
 }
 
+/* ---------------------------------------------------------------- stores */
+
+/**
+ * Where the workspace lives: the sync file, or the sync server from worker/.
+ * `write` returns false when another writer got there first, so the caller can
+ * read again and redo its change instead of overwriting theirs.
+ */
+function makeStore(opt) {
+  if (opt.cloud) return cloudStore(opt.cloud, opt.token);
+  const path = workspacePath(opt.file);
+  return {
+    where: path,
+    read: async () => readWorkspace(path),
+    write: async (backup) => {
+      writeWorkspace(path, backup);
+      return true;
+    },
+  };
+}
+
+function cloudStore(address, token) {
+  if (!token) die('no token for --cloud: pass --token <token> or set SYNC_TOKEN');
+  const raw = String(address).trim().replace(/\/+$/, '');
+  if (!raw) die('no address for --cloud');
+  const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  let rev = 0;
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  return {
+    where: url,
+    async read() {
+      const res = await fetch(`${url}/v1/workspace`, { headers });
+      if (res.status === 404) {
+        rev = 0;
+        return { format: FORMAT, version: 1, exportedAt: new Date().toISOString(), data: {} };
+      }
+      if (res.status === 401) throw new Error('the server did not accept the token');
+      if (!res.ok) throw new Error(`the server answered ${res.status}`);
+      const body = await res.json();
+      const doc = body?.doc;
+      if (!doc || doc.format !== FORMAT || typeof doc.data !== 'object' || doc.data === null) {
+        throw new Error('the server did not send a workspace file');
+      }
+      rev = Number(body.rev) || 0;
+      return doc;
+    },
+    async write(backup) {
+      const res = await fetch(`${url}/v1/workspace`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ baseRev: rev, doc: backup, device: 'mcp' }),
+      });
+      if (res.status === 409) return false;
+      if (!res.ok) throw new Error(`the server answered ${res.status}`);
+      const body = await res.json();
+      rev = Number(body.rev) || rev + 1;
+      return true;
+    },
+  };
+}
+
 /* ---------------------------------------------------------------- MCP */
 
 const INSTRUCTIONS = `This server holds the user's personal workspace from salman2301.github.io: tasks (numbered #1, #2, ..., with due dates, repeat rules, notes and sub-tasks), markdown notes, and spaces (named groups of both).
 
 Start with get_overview. Tasks are addressed by number, notes by id or title, spaces by name. Dates are YYYY-MM-DD or YYYY-MM-DD HH:MM in the user's local time, or a word such as today, tomorrow, monday.
 
-Changes are written to the user's sync file straight away, and the open site loads them when the user returns to its tab. Delete only what the user asked to delete; undo_delete puts the last deleted thing back while this server keeps running.`;
+Changes are written to the user's workspace straight away: the sync file, or the sync server, whichever this server was started with. The open site loads them when the user returns to its tab. Delete only what the user asked to delete; undo_delete puts the last deleted thing back while this server keeps running.`;
 
 async function main() {
   const opt = options(process.argv.slice(2));
@@ -151,28 +230,33 @@ async function main() {
     process.stdout.write(`${USAGE}\n`);
     return;
   }
-  if (!opt.file) die(`no workspace file given.\n\n${USAGE}`);
-  const path = workspacePath(opt.file);
+  if (!opt.file && !opt.cloud) die(`no workspace given.\n\n${USAGE}`);
+  const store = makeStore(opt);
   const site = await loadTools();
   const tools = site.DATA_TOOLS.filter((t) => !opt.readOnly || t.annotations?.readOnlyHint);
   const byName = new Map(tools.map((t) => [t.name, t]));
   const log = (text) => process.stderr.write(`[${NAME}] ${text}\n`);
 
-  // one call at a time: each is read file -> run -> write file
+  // one call at a time: each is read -> run -> write
   let queue = Promise.resolve();
   const callTool = (name, args) => {
     const run = queue.then(async () => {
       const tool = byName.get(name);
       if (!tool) throw new Error(`unknown tool: ${name}`);
-      const backup = readWorkspace(path);
-      site.hydrate(backup.data);
-      const result = await tool.execute(args && typeof args === 'object' ? args : {});
-      if (site.changed()) {
+      // Three tries: if another device wrote first, redo the change on their copy.
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const backup = await store.read();
+        site.hydrate(backup.data);
+        const result = await tool.execute(args && typeof args === 'object' ? args : {});
+        if (!site.changed()) return result;
         if (opt.readOnly) throw new Error('this server was started with --read-only');
-        writeWorkspace(path, { ...backup, exportedAt: new Date().toISOString(), data: site.dump() });
-        log(`${name} changed ${path}`);
+        const next = { ...backup, exportedAt: new Date().toISOString(), data: site.dump() };
+        if (await store.write(next)) {
+          log(`${name} changed ${store.where}`);
+          return result;
+        }
       }
-      return result;
+      throw new Error('the workspace changed under this call three times: try again');
     });
     queue = run.catch(() => undefined);
     return run;
@@ -232,9 +316,9 @@ async function main() {
     }
   }
 
-  if (opt.http) return serveHttp(opt.port, handle, log, path, tools.length);
+  if (opt.http) return serveHttp(opt.port, handle, log, store.where, tools.length);
   serveStdio(handle);
-  log(`${tools.length} tools on stdio, file ${path}${existsSync(path) ? '' : ' (not there yet)'}`);
+  log(`${tools.length} tools on stdio, ${store.where}${existsSync(store.where) || opt.cloud ? '' : ' (not there yet)'}`);
 }
 
 /* -------------------------------------------------------------- transports */
@@ -319,7 +403,7 @@ function serveHttp(port, handle, log, path, count) {
   });
   server.on('error', (e) => die(e.code === 'EADDRINUSE' ? `port ${port} is in use: pick another with --port` : e.message));
   server.listen(port, '127.0.0.1', () => {
-    log(`${count} tools on http://127.0.0.1:${port}/mcp, file ${path}${existsSync(path) ? '' : ' (not there yet)'}`);
+    log(`${count} tools on http://127.0.0.1:${port}/mcp, ${path}${existsSync(path) ? '' : ' (not there yet)'}`);
     log(`add it to Claude Code:  claude mcp add --transport http s2301 http://127.0.0.1:${port}/mcp`);
   });
 }
