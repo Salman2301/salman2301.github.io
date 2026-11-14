@@ -10,7 +10,7 @@ if (!process.env.STUB) {
 }
 const call = async (name, args = {}) => { const r = await ev(`(async () => { try { return JSON.stringify({ ok: await window.__tools[${JSON.stringify(name)}].execute(${JSON.stringify(args)}, {}) }); } catch (e) { return JSON.stringify({ err: e.message }); } })()`); return JSON.parse(r); };
 const names = JSON.parse(await ev(`JSON.stringify(Object.keys(window.__tools))`));
-check('37 tools registered', names.length === 37, names.join(','));
+check('38 tools registered', names.length === 38, names.join(','));
 let r = await call('add_task', { text: 'Write the launch post', due: 'tomorrow', notes: 'keep it short' });
 check('add_task with a due word and notes', r.ok?.added?.number >= 1 && /^\d{4}-\d\d-\d\d$/.test(r.ok.added.due) && r.ok.added.notes === 'keep it short', JSON.stringify(r));
 const no = r.ok.added.number;
@@ -41,7 +41,7 @@ r = await call('list_reminders', { from: '2026-11-13', to: '2026-12-31' }); chec
 r = await call('search', { query: 'launch' }); check('search finds the task and the note', r.ok?.results?.some(x => x.kind === 'task') && r.ok.results.some(x => x.kind === 'note'), JSON.stringify(r));
 r = await call('run_command', { command: 'clock diver' }); await sleep(600); check('run_command opens a clock face', r.ok && (await ev(`!!document.querySelector('svg.f-diver')`)) === true, JSON.stringify(r));
 r = await call('run_command', { command: 'nosuchthing' }); check('unknown command is an error', /command not found/.test(r.err || ''), JSON.stringify(r).slice(0, 120));
-r = await call('run_command', { command: 'mcp' }); check('mcp command reports on', /WebMCP is on: 37 tools/.test(r.ok?.output || ''), JSON.stringify(r).slice(0, 200));
+r = await call('run_command', { command: 'mcp' }); check('mcp command reports on', /WebMCP is on: 38 tools/.test(r.ok?.output || ''), JSON.stringify(r).slice(0, 200));
 r = await call('show', { task: no }); await sleep(600); check('show a task opens the task pane', r.ok && (await ev(`!!document.querySelector('.todo')`)) === true, JSON.stringify(r));
 check('the task pane shows what the agent added', /Write the launch blog post/.test(await ev(`document.querySelector('.todo')?.innerText || ''`)));
 r = await call('delete_task', { task: no }); check('delete_task removes sub-tasks too', r.ok?.deleted?.subtasksDeleted === 1, JSON.stringify(r));

@@ -38,6 +38,8 @@ export interface Task {
   parentId?: string;
   /** Free-form notes. */
   notes?: string;
+  /** Tags from its space's list, e.g. ["outreach"] (see cleanTag). */
+  tags?: string[];
   createdAt: number;
   doneAt?: number;
 }
@@ -53,6 +55,8 @@ export interface Project {
   createdAt: number;
   /** Theme shown while this space is active; unset uses the normal theme. */
   theme?: string;
+  /** This space's tags, for grouping its tasks, in the order they are shown. */
+  tags?: string[];
 }
 
 export const INBOX_ID = 'inbox';
@@ -152,8 +156,88 @@ export function extractDue(text: string, now = new Date()): { text: string; due?
   return { text: out, due };
 }
 
-export function addTask(text: string, opts: { projectId?: string; parentId?: string } = {}): Task | null {
-  const { text: clean, due, repeat } = extractDue(text);
+/* ----------------------------------------------------------------- tags */
+
+/**
+ * Tags group the tasks of a space: each space keeps its own list, and a task
+ * carries some of them. Typing #name in a task adds the tag (a new name joins
+ * the space's list). Task numbers like #12 are not tags: a tag starts with a letter.
+ */
+export function cleanTag(raw: string): string {
+  const t = raw.trim().replace(/^#+/, '').toLowerCase().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_-]/gu, '').slice(0, 24);
+  return /^\p{L}/u.test(t) ? t : '';
+}
+
+/** Pull #tags out of task text. */
+export function extractTags(text: string): { text: string; tags: string[] } {
+  const tags: string[] = [];
+  const out = text
+    .replace(/(^|\s)#(\p{L}[\p{L}\p{N}_-]*)(?=\s|$)/gu, (_, pre: string, word: string) => {
+      const t = cleanTag(word);
+      if (t && !tags.includes(t)) tags.push(t);
+      return pre;
+    })
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  return { text: out, tags };
+}
+
+const uniq = (list: string[]) => [...new Set(list.map(cleanTag).filter(Boolean))];
+
+/** Add tags to a space's list (unknown names are added at the end). */
+export function addSpaceTags(projectId: string, tags: string[]) {
+  const add = uniq(tags);
+  if (!add.length) return;
+  projects.update((list) =>
+    list.map((p) => {
+      if (p.id !== projectId) return p;
+      const have = p.tags ?? [];
+      const more = add.filter((t) => !have.includes(t));
+      return more.length ? { ...p, tags: [...have, ...more] } : p;
+    }),
+  );
+}
+
+/** Remove a tag from a space's list and from every task in that space. */
+export function removeSpaceTag(projectId: string, tag: string) {
+  const t = cleanTag(tag);
+  projects.update((list) => list.map((p) => (p.id === projectId && p.tags ? { ...p, tags: p.tags.filter((x) => x !== t) } : p)));
+  tasks.update((list) => list.map((x) => (projectOf(x) === projectId && x.tags?.includes(t) ? withTags(x, x.tags.filter((y) => y !== t)) : x)));
+}
+
+/** A space's tags: its own list, then any used by its tasks but missing from the list. */
+export function tagsOf(project: Project, all: Task[]): string[] {
+  const out = [...(project.tags ?? [])];
+  for (const t of all) if (projectOf(t) === project.id) for (const tag of t.tags ?? []) if (!out.includes(tag)) out.push(tag);
+  return out;
+}
+
+function withTags(t: Task, tags: string[]): Task {
+  const next = { ...t, tags: uniq(tags) };
+  if (!next.tags.length) delete next.tags;
+  return next;
+}
+
+/** Set a task's tags (replacing the old ones). New names join its space's list. */
+export function setTaskTags(id: string, tags: string[]) {
+  const task = get(tasks).find((t) => t.id === id);
+  if (!task) return;
+  tasks.update((list) => list.map((t) => (t.id === id ? withTags(t, tags) : t)));
+  addSpaceTags(projectOf(task), tags);
+}
+
+/** Put a tag on a task, or take it off. */
+export function toggleTaskTag(id: string, tag: string) {
+  const task = get(tasks).find((t) => t.id === id);
+  const t = cleanTag(tag);
+  if (!task || !t) return;
+  const have = task.tags ?? [];
+  setTaskTags(id, have.includes(t) ? have.filter((x) => x !== t) : [...have, t]);
+}
+
+export function addTask(text: string, opts: { projectId?: string; parentId?: string; tags?: string[] } = {}): Task | null {
+  const tagged = extractTags(text);
+  const { text: clean, due, repeat } = extractDue(tagged.text);
   if (!clean) return null;
   const parent = opts.parentId ? get(tasks).find((t) => t.id === opts.parentId) : undefined;
   if (opts.parentId && (!parent || parent.parentId)) return null;
@@ -169,7 +253,10 @@ export function addTask(text: string, opts: { projectId?: string; parentId?: str
   if (parent) task.parentId = parent.id;
   if (due) task.due = due;
   if (repeat) task.repeat = repeat;
+  const tags = uniq([...(opts.tags ?? []), ...tagged.tags]);
+  if (tags.length) task.tags = tags;
   tasks.update((list) => [...list, task]);
+  if (tags.length) addSpaceTags(task.projectId ?? INBOX_ID, tags);
   return task;
 }
 
@@ -227,6 +314,8 @@ export function moveTask(id: string, projectId: string) {
   const list = get(tasks);
   const task = list.find((t) => t.id === id);
   if (!task || !get(projects).some((p) => p.id === projectId)) return;
+  // the tags go along, and join the new space's list
+  addSpaceTags(projectId, list.filter((t) => t.id === id || t.parentId === id).flatMap((t) => t.tags ?? []));
   tasks.update((all) =>
     all.map((t) => {
       if (t.id === id) return { ...t, projectId, parentId: undefined };
@@ -272,9 +361,13 @@ export function removeTask(id: string) {
 }
 
 export function renameTask(id: string, text: string) {
-  const { text: clean, due, repeat } = extractDue(text);
+  const tagged = extractTags(text);
+  const { text: clean, due, repeat } = extractDue(tagged.text);
   if (!clean) return;
   tasks.update((list) => list.map((t) => (t.id === id ? { ...t, text: clean.slice(0, 200), due: due ?? t.due, repeat: repeat ?? t.repeat } : t)));
+  // #tags typed in the new text are added to the ones it has
+  const task = get(tasks).find((t) => t.id === id);
+  if (task && tagged.tags.length) setTaskTags(id, [...(task.tags ?? []), ...tagged.tags]);
 }
 
 /**

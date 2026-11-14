@@ -21,7 +21,7 @@ check('initialize echoes the protocol version and has instructions', m.result?.p
 m = await c.rpc('initialize', { protocolVersion: '1999-01-01' }); check('unknown version gets the newest', m.result?.protocolVersion === '2025-11-25');
 m = await c.rpc('ping'); check('ping', m.result && !m.error);
 m = await c.rpc('tools/list'); const tools = m.result.tools;
-check('25 tools, each with a schema and hints', tools.length === 25 && tools.every((t) => t.inputSchema?.type === 'object' && t.description && typeof t.annotations.readOnlyHint === 'boolean'), tools.length);
+check('26 tools, each with a schema and hints', tools.length === 26 && tools.every((t) => t.inputSchema?.type === 'object' && t.description && typeof t.annotations.readOnlyHint === 'boolean'), tools.length);
 check('delete tools are marked destructive, reads read-only', tools.find((t) => t.name === 'delete_task').annotations.destructiveHint && tools.find((t) => t.name === 'list_tasks').annotations.readOnlyHint && !tools.find((t) => t.name === 'add_task').annotations.readOnlyHint);
 check('no page-only tools', !tools.some((t) => ['open_pane', 'control_music', 'run_command', 'set_theme'].includes(t.name)));
 m = await c.rpc('nope/method'); check('unknown method is an error', m.error?.code === -32601);
@@ -46,6 +46,13 @@ r = await c.call('delete_task', { task: 2 }); check('delete_task', r.ok?.deleted
 r = await c.call('undo_delete'); check('undo_delete writes it back', r.ok?.restored && disk().data['tasks:list'].length === 5, JSON.stringify(r));
 r = await c.call('add_space', { name: 'Work' }); r = await c.call('update_task', { task: 1, space: 'Work', notes: 'hello' }); check('spaces and update_task', r.ok?.updated?.space === 'Work' && disk().data['tasks:projects'].length === 2, JSON.stringify(r));
 r = await c.call('delete_space', { space: 'Work' }); check('delete_space moves tasks to the Inbox', r.ok?.movedToInbox?.tasks === 1 && disk().data['tasks:projects'].length === 1, JSON.stringify(r));
+r = await c.call('add_task', { text: 'Call the gym about #12 #Outreach', tags: ['Visit'] }); const tagNo = r.ok?.added?.number;
+check('#tags typed in a task become tags, task numbers do not', r.ok?.added?.text === 'Call the gym about #12' && r.ok.added.tags?.join() === 'visit,outreach', JSON.stringify(r));
+r = await c.call('list_spaces'); check('list_spaces shows the space\'s tags', r.ok?.spaces?.[0]?.tags?.join() === 'visit,outreach' && disk().data['tasks:projects'][0].tags.join() === 'visit,outreach', JSON.stringify(r));
+r = await c.call('list_tasks', { tag: 'outreach' }); check('list_tasks by tag', r.ok?.count === 1 && r.ok.tasks[0].number === tagNo, JSON.stringify(r));
+r = await c.call('set_space_tags', { space: 'Inbox', add: ['content'], remove: ['visit'] }); check('set_space_tags adds and removes, and takes a removed tag off tasks', r.ok?.tags?.join() === 'outreach,content' && disk().data['tasks:list'].find((t) => t.no === tagNo).tags.join() === 'outreach', JSON.stringify(r));
+r = await c.call('update_task', { task: tagNo, tags: [] }); check('update_task with no tags clears them', !('tags' in r.ok?.updated) && !('tags' in disk().data['tasks:list'].find((t) => t.no === tagNo)), JSON.stringify(r));
+await c.call('delete_task', { task: tagNo });
 r = await c.call('get_stats', { days: 2 }); check('get_stats', r.ok?.days?.length === 2 && r.ok.days[1].tasksAdded >= 4, JSON.stringify(r));
 r = await c.call('export_backup'); check('export_backup', r.ok?.format === 'salman2301-workspace' && r.ok.data['tasks:list'].length === 5, JSON.stringify(r).slice(0, 200));
 r = await c.call('complete_task', { task: 999 }); check('errors come back as tool errors', /no task #999/.test(r.err || ''), JSON.stringify(r));

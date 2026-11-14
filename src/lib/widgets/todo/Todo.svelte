@@ -6,7 +6,9 @@
     activeTaskId,
     addProject,
     addTask,
+    addSpaceTags,
     addTaskLines,
+    cleanTag,
     moveTask,
     clearDone,
     formatSpent,
@@ -14,6 +16,7 @@
     isOverdue,
     projectOf,
     projects,
+    removeSpaceTag,
     removeTask,
     renameProject,
     renameTask,
@@ -21,8 +24,10 @@
     setDue,
     setRepeat,
     setTaskNotes,
+    tagsOf,
     tasks,
     toggleTask,
+    toggleTaskTag,
     type Task,
   } from '../../core/tasks';
   import { friendlyDate } from '../../core/dates';
@@ -61,6 +66,38 @@
   $: chips = $activeSpace === ALL ? $projects : $projects.filter((p) => p.id === $activeSpace);
   $: projectTasks = $tasks.filter((t) => projectOf(t) === project.id);
   $: left = projectTasks.filter((t) => !t.done).length;
+
+  /* -------------------------------------------------------------- tags */
+
+  // Each space has its own tags; the pane remembers the one it filters by.
+  $: spaceTags = tagsOf(project, $tasks);
+  $: tag = typeof config.tag === 'string' && spaceTags.includes(config.tag) ? config.tag : '';
+  $: openByTag = countTags(projectTasks);
+
+  function countTags(all: Task[]): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const t of all) if (!t.done) for (const x of t.tags ?? []) counts[x] = (counts[x] ?? 0) + 1;
+    return counts;
+  }
+
+  let newTag = false;
+  let newTagName = '';
+
+  function createTag() {
+    const name = cleanTag(newTagName);
+    newTagName = '';
+    newTag = false;
+    if (!name) return;
+    addSpaceTags(project.id, [name]);
+    updateConfig({ tag: name });
+  }
+
+  function deleteTag(name: string) {
+    const used = projectTasks.filter((t) => t.tags?.includes(name)).length;
+    if (used && !confirm(`Remove the tag #${name} from ${project.name}? ${used} ${used === 1 ? 'task loses' : 'tasks lose'} it; the tasks stay.`)) return;
+    removeSpaceTag(project.id, name);
+    updateConfig({ tag: '' });
+  }
   $: openByProject = countOpen($tasks);
 
   function countOpen(all: Task[]): Record<string, number> {
@@ -105,10 +142,10 @@
    * Top-level tasks in this space, each followed by its sub-tasks. A row
    * shows when it matches the filter, or when one of its sub-tasks does.
    */
-  $: rows = buildRows(projectTasks, filter);
+  $: rows = buildRows(projectTasks, filter, tag);
 
-  function buildRows(all: Task[], f: Filter): { task: Task; depth: number }[] {
-    const keep = (t: Task) => (f === 'all' ? true : f === 'done' ? t.done : !t.done);
+  function buildRows(all: Task[], f: Filter, byTag: string): { task: Task; depth: number }[] {
+    const keep = (t: Task) => (f === 'all' ? true : f === 'done' ? t.done : !t.done) && (!byTag || !!t.tags?.includes(byTag));
     const ids = new Set(all.map((t) => t.id));
     // A sub-task whose parent is gone (finished and cleared) is shown on its own.
     const tops = all.filter((t) => !t.parentId || !ids.has(t.parentId));
@@ -157,12 +194,13 @@
   ];
   const repeatChoice = (r: string | undefined) => r ?? '';
 
+  // With a tag picked, new tasks get it.
   function add() {
-    if (addTask(text, { projectId: project.id })) text = '';
+    if (addTask(text, { projectId: project.id, tags: tag ? [tag] : [] })) text = '';
   }
 
   function addSub(parent: string) {
-    if (addTask(subText, { parentId: parent })) subText = '';
+    if (addTask(subText, { parentId: parent, tags: tag ? [tag] : [] })) subText = '';
   }
 
   /**
@@ -226,6 +264,9 @@
     else if (e.key === 'm') {
       e.preventDefault();
       (document.querySelector(`select[data-move="${id}"]`) as HTMLSelectElement | null)?.focus();
+    } else if (e.key === 't') {
+      e.preventDefault();
+      (document.querySelector(`select[data-tag="${id}"]`) as HTMLSelectElement | null)?.focus();
     }
   }
 
@@ -310,8 +351,38 @@
     {/if}
   </header>
 
+  <nav class="tags" aria-label="Tags in {project.name}">
+    {#if spaceTags.length}
+      <button class="tag" class:on={!tag} on:click={() => updateConfig({ tag: '' })}>all</button>
+    {/if}
+    {#each spaceTags as name (name)}
+      <span class="tag-wrap">
+        <button class="tag" class:on={tag === name} on:click={() => updateConfig({ tag: tag === name ? '' : name })} title="Show only tasks tagged #{name}">#{name}{#if openByTag[name]}<span class="n">{openByTag[name]}</span>{/if}</button>
+        {#if tag === name}<button class="tag-del" title="Remove this tag from {project.name}" aria-label="Remove tag {name}" on:click={() => deleteTag(name)}>x</button>{/if}
+      </span>
+    {/each}
+    {#if newTag}
+      <input
+        class="pinput tinput"
+        use:focusOnMount
+        bind:value={newTagName}
+        placeholder="tag name"
+        maxlength="24"
+        aria-label="New tag name"
+        on:keydown={(e) => {
+          if (e.key === 'Enter') createTag();
+          if (e.key === 'Escape') newTag = false;
+          e.stopPropagation();
+        }}
+        on:blur={() => (newTag = false)}
+      />
+    {:else}
+      <button class="tag add" on:click={() => (newTag = true)} title="New tag for {project.name}. You can also type #name in a task.">{spaceTags.length ? '+' : '+ tag'}</button>
+    {/if}
+  </nav>
+
   <form on:submit|preventDefault={add}>
-    <input bind:this={input} use:mention={'note'} bind:value={text} on:keydown={onInputKey} on:paste={(e) => onPaste(e)} placeholder="add a task to {project.name}. @tmrw sets a reminder, @daily repeats, @ links a note" maxlength="200" aria-label="New task" spellcheck="false" />
+    <input bind:this={input} use:mention={'note'} bind:value={text} on:keydown={onInputKey} on:paste={(e) => onPaste(e)} placeholder="add a task to {project.name}{tag ? ` #${tag}` : ''}. @tmrw sets a reminder, @daily repeats, #name tags it" maxlength="200" aria-label="New task" spellcheck="false" />
   </form>
   {#if pasteNote}<p class="paste-note" role="status">{pasteNote}</p>{/if}
 
@@ -351,9 +422,26 @@
           {/if}
         </span>
         {#if t.repeat}<span class="rep" title="Repeats {t.repeat}{t.timesDone ? `, done ${t.timesDone} times` : ''}. Ticking it moves it to the next time.">↻ {repeatLabel(t.repeat)}</span>{/if}
+        {#each t.tags ?? [] as name (name)}<button class="ttag" class:on={tag === name} title="Show only #{name}" on:click={() => updateConfig({ tag: tag === name ? '' : name })}>#{name}</button>{/each}
         {#if t.notes}<button class="mark" title="Has notes (n)" aria-label="Notes" on:click={() => (notesFor = notesFor === t.id ? null : t.id)}>≡</button>{/if}
         <span class="gap" />
         <span class="acts"><span class="acts-in">
+        {#if spaceTags.length}
+          <select
+            class="act move"
+            data-tag={t.id}
+            value=""
+            on:change={(e) => {
+              toggleTaskTag(t.id, e.currentTarget.value);
+              e.currentTarget.value = '';
+            }}
+            title="Tag or untag this task (t)"
+            aria-label="Tags"
+          >
+            <option value="">#</option>
+            {#each spaceTags as name (name)}<option value={name}>{t.tags?.includes(name) ? `✓ #${name}` : `#${name}`}</option>{/each}
+          </select>
+        {/if}
         {#if $projects.length > 1}
           <select
             class="act move"
@@ -418,7 +506,7 @@
       {/if}
     {/each}
     {#if !rows.length}
-      <li class="empty">{filter === 'done' ? 'nothing done yet' : projectTasks.length ? 'all done' : `no tasks in ${project.name} yet. Type one above.`}</li>
+      <li class="empty">{tag && !projectTasks.some((t) => t.tags?.includes(tag)) ? `no tasks tagged #${tag} yet. New tasks typed above get it.` : filter === 'done' ? 'nothing done yet' : projectTasks.length ? 'all done' : `no tasks in ${project.name} yet. Type one above.`}</li>
     {/if}
   </ul>
 
@@ -464,6 +552,63 @@
   }
   .chip.add:hover {
     color: var(--hl1);
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px 0;
+  }
+  .tag-wrap {
+    display: inline-flex;
+    align-items: center;
+  }
+  .tag {
+    padding: 0 6px;
+    border-radius: 4px;
+    color: var(--t1);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .tag .n {
+    margin-left: 4px;
+    color: var(--hl1);
+    font-variant-numeric: tabular-nums;
+  }
+  .tag.on {
+    color: var(--hl1);
+    background: color-mix(in srgb, var(--hl1) 12%, transparent);
+  }
+  .tag:hover,
+  .tag-del:hover {
+    color: var(--hl1);
+  }
+  .tag.add {
+    opacity: 0.7;
+  }
+  .tag-del {
+    padding: 0 4px;
+    font-size: 11px;
+    color: var(--t1);
+  }
+  .tinput {
+    width: 110px;
+  }
+  .ttag {
+    order: 2;
+    flex: 0 0 auto;
+    font-size: 11px;
+    padding: 0 2px;
+    color: var(--t1);
+    white-space: nowrap;
+  }
+  .ttag:hover,
+  .ttag.on {
+    color: var(--hl1);
+  }
+  .narrow .ttag {
+    order: 0;
   }
   .phead {
     display: flex;
