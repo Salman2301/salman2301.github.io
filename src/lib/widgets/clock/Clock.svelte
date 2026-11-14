@@ -4,6 +4,10 @@
   import FaceView from './FaceView.svelte';
   import { DEFAULT_FACE, FACES, findFace, stepFace, type FaceDef } from './faces';
   import { secondTick } from './ticker';
+  import { ymd } from '../../core/dates';
+  import { openMention } from '../../core/mentions';
+  import { inList, reminders } from '../../core/reminders';
+  import { activeSpace } from '../../core/spaces';
   import {
     allZones, cityName, describeZone, formatUtcOffset, isValidZone, localZone, prefers12h, resolveZone, utcOffset,
   } from './zones';
@@ -49,9 +53,38 @@
 
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+  /* ------------------------------------------------- today's reminders */
+
+  // What is due today (in this tab's space), under the time; timed ones also
+  // sit as dots on an analog dial. "today" in the footer cycles: shown, only
+  // while the pointer is over the clock (or it has focus), hidden.
+  type TodayMode = 'show' | 'hover' | 'off';
+  const TODAY_NEXT: Record<TodayMode, TodayMode> = { show: 'hover', hover: 'off', off: 'show' };
+  $: todayMode = (config.today === false || config.today === 'off' ? 'off' : config.today === 'hover' ? 'hover' : 'show') as TodayMode;
+  $: showToday = todayMode !== 'off';
+  $: today = ymd(now);
+  $: dueToday = showToday ? inList($reminders, $activeSpace).filter((r) => r.day === today && !r.done && !r.upcoming) : [];
+  $: nowMin = now.getHours() * 60 + now.getMinutes();
+  const minOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+  // the next timed one, or the first untimed one when none is left
+  $: nextAt = dueToday.find((r) => r.time && minOf(r.time) >= nowMin);
+  // as many lines as fit: a roomy pane shows up to five, a medium one the next one
+  // (on hover the list floats over the face, so a medium pane has room for three)
+  $: maxRows = tiny ? 0 : roomy ? 5 : todayMode === 'hover' ? (h >= 160 ? 3 : 1) : h >= 200 ? 1 : 0;
+  $: agenda = maxRows === 1 ? [nextAt ?? dueToday.find((r) => !r.time) ?? dueToday[dueToday.length - 1]].filter(Boolean) : dueToday.slice(0, maxRows);
+  $: moreToday = dueToday.length - agenda.length;
+  $: agendaSpace = agenda.length && todayMode === 'show' ? agenda.length * 20 + (moreToday > 0 ? 16 : 0) + 10 : 0;
+  // only the next twelve hours fit a 12 hour dial; the 24 hour face takes the whole day
+  $: marks =
+    def.kind === 'analog'
+      ? dueToday
+          .filter((r) => r.time && (face === 'day' || (minOf(r.time) >= nowMin - 60 && minOf(r.time) < nowMin + 660)))
+          .map((r) => ({ min: minOf(r.time!), label: `${r.time} ${r.label}`, past: minOf(r.time!) < nowMin }))
+      : [];
+
   $: dateSize = clamp(fw * 0.034, 11, 18);
   $: showDate = !tiny && !def.ownDate;
-  $: dateSpace = (showDate ? dateSize * 1.4 + 10 : 0) + (strip ? 28 : 0);
+  $: dateSpace = (showDate ? dateSize * 1.4 + 10 : 0) + (strip ? 28 : 0) + agendaSpace;
   // the box the face may fill
   $: faceW = Math.max(40, fw - 8);
   $: faceH = Math.max(40, fh - dateSpace - 4);
@@ -147,6 +180,7 @@
   class="clock-pane"
   class:bp-tiny={tiny}
   class:bp-wide={wide}
+  class:today-hover={todayMode === 'hover'}
   bind:this={root}
   bind:clientWidth={w}
   bind:clientHeight={h}
@@ -166,9 +200,22 @@
   {/if}
   <div class="clock-body" hidden={picking}>
     <div class="face-area" bind:clientWidth={fw} bind:clientHeight={fh}>
-      {#if !picking}<FaceView {face} {now} {hour12} w={faceW} h={faceH} />{/if}
+      {#if !picking}<FaceView {face} {now} {hour12} w={faceW} h={faceH} {marks} />{/if}
       {#if showDate}
         <p class="date" style="font-size:{dateSize}px">{dateText}</p>
+      {/if}
+      {#if agenda.length}
+        <ul class="agenda" aria-label="Due today">
+          {#each agenda as r (r.kind + r.id)}
+            <li>
+              <button class:past={!!r.time && minOf(r.time) < nowMin} class:next={r === nextAt} on:click={() => openMention(r.kind, r.id)} title="Open it">
+                <span class="when">{r.time ?? 'today'}</span>
+                <span class="what">{r.label}</span>
+              </button>
+            </li>
+          {/each}
+          {#if moreToday > 0}<li class="more">+{moreToday} more today</li>{/if}
+        </ul>
       {/if}
       {#if strip}
         <!-- one line only: chips that wrap to a second line are clipped away -->
@@ -243,6 +290,14 @@
           <button aria-pressed={!hour12} on:click={() => setHour12(false)}>24h</button>
           <button aria-pressed={hour12} on:click={() => setHour12(true)}>12h</button>
         </div>
+      {/if}
+      {#if !picking}
+        <button
+          class="cities"
+          aria-pressed={showToday}
+          on:click={() => updateConfig({ today: TODAY_NEXT[todayMode] })}
+          title={todayMode === 'show' ? "Today's reminders are shown. Click: only on hover" : todayMode === 'hover' ? "Today's reminders show on hover. Click: hide them" : "Today's reminders are hidden. Click: show them"}
+        >today{todayMode === 'off' ? ' off' : dueToday.length ? ` ${dueToday.length}` : ''}{todayMode === 'hover' ? ' · hover' : ''}</button>
       {/if}
       {#if roomy && !picking}
         <button class="cities" aria-pressed={editingZones} on:click={() => (editingZones = !editingZones)} title="World clocks">cities</button>
@@ -344,6 +399,90 @@
     white-space: nowrap;
   }
 
+  /* on hover: the list floats over the bottom of the face, and the dots fade in */
+  .today-hover .face-area {
+    position: relative;
+  }
+  .today-hover .agenda {
+    position: absolute;
+    left: 50%;
+    bottom: 4px;
+    transform: translateX(-50%);
+    padding: 6px;
+    border: 1px solid var(--bg2);
+    border-radius: 8px;
+    background: var(--bg1);
+    box-shadow: 0 0 0 6px var(--bg1);
+    z-index: 2;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+  .today-hover :global(.remind) {
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+  .today-hover:hover .agenda,
+  .today-hover:focus-within .agenda,
+  .today-hover:focus .agenda {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .today-hover:hover :global(.remind),
+  .today-hover:focus-within :global(.remind),
+  .today-hover:focus :global(.remind) {
+    opacity: 1;
+  }
+  .today-hover:hover :global(.remind.past),
+  .today-hover:focus-within :global(.remind.past),
+  .today-hover:focus :global(.remind.past) {
+    opacity: 0.35;
+  }
+  .agenda {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    width: min(100%, 420px);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .agenda button {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--t2);
+    text-align: left;
+  }
+  .agenda button:hover {
+    background: color-mix(in srgb, var(--bg2) 40%, transparent);
+  }
+  .agenda .when {
+    flex: 0 0 auto;
+    min-width: 40px;
+    color: var(--t1);
+    font-variant-numeric: tabular-nums;
+  }
+  .agenda .what {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agenda .next .when {
+    color: var(--hl1);
+  }
+  .agenda .past {
+    opacity: 0.45;
+  }
+  .agenda .more {
+    padding: 0 6px;
+    font-size: 11px;
+    color: var(--t1);
+  }
   .date {
     margin: 0;
     color: var(--t1);

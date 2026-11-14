@@ -14,6 +14,8 @@
   export let size = 200;
   /** A gallery thumbnail: step once a second instead of animating. */
   export let preview = false;
+  /** Today's reminders with a time, as minutes after midnight: a dot on the rim at each. */
+  export let marks: { min: number; label: string; past: boolean }[] = [];
 
   const C = 100;
   const range = (n: number) => Array.from({ length: n }, (_, i) => i);
@@ -308,9 +310,22 @@
     <line class="second" x1={C} y1="116" x2={C} y2="22" transform={rot(sDeg)} />
     <circle class="hub" cx={C} cy={C} r="2.6" />
   {/if}
+  {#each marks as m}
+    <!-- the 24 hour face turns once a day; the others show the next twelve hours -->
+    {@const p = at(face === 'day' ? m.min / 4 : (m.min % 720) / 2, face === 'day' ? 89 : 90)}
+    <circle class="remind" class:past={m.past} cx={p.x} cy={p.y} r="4.2"><title>{m.label}</title></circle>
+  {/each}
 </svg>
 
 <style>
+  .remind {
+    fill: var(--hl1);
+    stroke: var(--bg1);
+    stroke-width: 1.4;
+  }
+  .remind.past {
+    opacity: 0.35;
+  }
   .dial {
     display: block;
     flex-shrink: 0;

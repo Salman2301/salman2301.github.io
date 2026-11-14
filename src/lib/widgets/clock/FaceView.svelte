@@ -19,6 +19,8 @@
   export let h = 200;
   /** A gallery thumbnail: no sweeping second hand. */
   export let preview = false;
+  /** Reminder dots for the analog faces (see AnalogFace). */
+  export let marks: { min: number; label: string; past: boolean }[] = [];
 
   const pad = (n: number) => String(n).padStart(2, '0');
   $: def = findFace(face);
@@ -31,7 +33,7 @@
 </script>
 
 {#if def?.kind === 'analog'}
-  <AnalogFace {face} size={Math.max(preview ? 30 : 48, Math.min(w, h, 520))} {preview} />
+  <AnalogFace {face} size={Math.max(preview ? 30 : 48, Math.min(w, h, 520))} {preview} {marks} />
 {:else if face === 'flip'}
   <Flip {now} {hour12} {w} {h} />
 {:else if face === 'segments'}
