@@ -33,6 +33,7 @@
   <div class="text">
     <p class="head">Scan with your phone's camera to sync it with this workspace.</p>
     <p>It opens the site and joins <span class="hl">{server}</span>. A phone with nothing of its own takes this copy; one with its own tasks asks first.</p>
+    <p>iPhone: an app on the home screen keeps its own data, apart from Safari. Add the site to the home screen, open it, and run <span class="hl">sync join</span> with this link.</p>
     <p class="warn">The code holds your token: anyone who scans it can read and change your workspace. Show it only to your own devices.</p>
     <div class="acts">
       <button on:click={copy}>{copied ? 'copied' : 'copy link'}</button>

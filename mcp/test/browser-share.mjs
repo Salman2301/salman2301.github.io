@@ -81,6 +81,26 @@ await send('Page.navigate', { url: decoded }); await sleep(4000);
 check('a device with its own tasks is asked first', /replaces the tasks and notes/.test((await ev(`window.__asked ?? ''`)) || ''));
 check('saying no keeps its tasks', JSON.stringify(await tasksHere()) === JSON.stringify(['Own task']), JSON.stringify(await tasksHere()));
 
+// device 4, an installed app on a fresh phone: "sync join <link>" pasted in
+await wipe();
+await send('Page.navigate', { url: 'http://localhost:4317/' }); await sleep(2500);
+await runCmd('sync join not-a-link');
+check('"sync join" with no link explains what to paste', /usage: sync join <link>/.test(await out()));
+await runCmd(`sync join ${decoded}`);
+check('"sync join <link>" takes the shared copy', (await tasksHere()).includes('Added on the phone'), JSON.stringify(await tasksHere()));
+s = await state();
+check('and syncs with the same workspace', s.kind === 'cloud' && s.token === token);
+await runCmd(`sync join ${decoded}`);
+check('joining again says it already is', /already syncing with that workspace/.test(await out()));
+
+// device 5, its own tasks: "sync join" replaces nothing and says how to choose
+await wipe();
+await send('Page.navigate', { url: 'http://localhost:4317/' }); await sleep(2000);
+await ev(`localStorage.setItem('s2301:tasks:list', ${JSON.stringify(JSON.stringify([task('o1', 1, 'Own task')]))}); localStorage.setItem('s2301:tasks:seq', '1')`);
+await send('Page.reload'); await sleep(2500);
+await runCmd(`sync join ${decoded}`);
+check('"sync join" on a device with its own tasks keeps them', JSON.stringify(await tasksHere()) === JSON.stringify(['Own task']) && /nothing is replaced yet/.test(await out()), JSON.stringify(await tasksHere()));
+
 console.log(logs.filter((l) => !/favicon|Failed to load resource|401|404/.test(l)).join('\n') || 'no console errors');
 console.log(fail ? `FAILED ${fail}` : 'ALL PASSED');
 done(fail ? 1 : 0);

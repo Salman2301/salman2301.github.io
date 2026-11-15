@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { parseBackup, restore, snapshot, summarize, type Backup } from './backup';
 import * as cloud from './cloud';
 import { notify } from './notify';
+import { isInstalled } from './pwa';
 import { setStatus } from './status';
 import { onStorageChange, persisted } from './storage';
 
@@ -376,28 +377,61 @@ function hasOwnData(): boolean {
   return list('tasks:list').length > 0 || list('notes:list').some((n) => (n as { id?: string }).id !== 'welcome');
 }
 
+/** The token and server in a "sync share" link, or a bare token. Null when it is neither. */
+export function parseJoin(text: string, server?: string): { token: string; server: string } | null {
+  const t = text.trim();
+  const at = t.indexOf('sync=');
+  if (at >= 0) {
+    const p = new URLSearchParams(t.slice(at));
+    const token = p.get('sync') ?? '';
+    return token ? { token, server: p.get('server') || server || cloud.CLOUD_URL } : null;
+  }
+  return /^[A-Za-z0-9_-]{16,}$/.test(t) ? { token: t, server: server || cloud.CLOUD_URL } : null;
+}
+
+export type JoinResult = 'same' | 'joined' | 'pulled' | 'kept';
+
 /**
- * Opened from a "sync share" link: join that workspace. A browser with
- * nothing of its own takes the shared copy straight away; one with its own
- * tasks or notes is asked first, since taking the copy replaces them.
+ * Join the workspace of a "sync share" link. A browser with nothing of its
+ * own takes the shared copy straight away; one with its own tasks or notes
+ * is asked first (`ask`), since taking the copy replaces them. Without
+ * `ask` it is left for "sync pull" or "sync push".
  */
+export async function joinWorkspace(token: string, server: string, ask: (existing: string) => boolean): Promise<JoinResult> {
+  const s = get(syncState);
+  if (kindOf(s) === 'cloud' && s.token === token && cloud.baseUrl(s.url) === cloud.baseUrl(server)) return 'same';
+  const r = await connectCloud(server, token);
+  if (!r.existing) return 'joined';
+  if (hasOwnData() && !ask(r.existing)) return 'kept';
+  await pull(false);
+  return 'pulled';
+}
+
+/** On iPhone and iPad a site added to the home screen keeps its own data, apart from Safari. */
+export function separateAppStorage(): boolean {
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return ios && !isInstalled();
+}
+
+/** Opened from a "sync share" link: join that workspace. */
 async function joinFromLink(): Promise<void> {
-  const m = /[#&]sync=([^&]+)/.exec(location.hash);
-  if (!m) return;
-  const p = new URLSearchParams(location.hash.slice(1));
-  const token = p.get('sync') ?? '';
-  const server = p.get('server') || cloud.CLOUD_URL;
+  const join = parseJoin(location.hash);
   // the token must not stay in the address bar, the history or a bookmark
   history.replaceState(null, '', location.pathname + location.search);
-  const s = get(syncState);
-  if (!token || (kindOf(s) === 'cloud' && s.token === token)) return;
+  if (!join) return;
   try {
-    const r = await connectCloud(server, token);
-    if (!r.existing) return void notify('Syncing with the shared workspace', { body: 'changes on this device now save there too', tone: 'success' });
-    if (hasOwnData() && !confirm(`Use the shared workspace on this device?\n\nIt has ${r.existing}. Taking it replaces the tasks and notes in this browser now.`)) {
-      return void notify('Connected, nothing replaced yet', { body: 'run "sync pull" to use the shared copy, or "sync push" to keep this one', durationMs: 15_000 });
+    const r = await joinWorkspace(join.token, join.server, (existing) =>
+      confirm(`Use the shared workspace on this device?\n\nIt has ${existing}. Taking it replaces the tasks and notes in this browser now.`),
+    );
+    if (r === 'kept') return void notify('Connected, nothing replaced yet', { body: 'run "sync pull" to use the shared copy, or "sync push" to keep this one', durationMs: 15_000 });
+    if (r === 'same') return;
+    if (separateAppStorage()) {
+      return void notify('Synced in Safari', {
+        body: 'an app on the home screen keeps its own data: add it (Share > Add to Home Screen), open it, and run "sync join" with the link copied on the other device',
+        durationMs: 30_000,
+      });
     }
-    await pull(false);
+    notify('Syncing with the shared workspace', { body: 'changes on this device now save there too', tone: 'success' });
   } catch (err) {
     failed(err);
   }

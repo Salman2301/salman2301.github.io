@@ -9,6 +9,8 @@ import {
   disconnect,
   folderSupported,
   ISSUES_URL,
+  joinWorkspace,
+  parseJoin,
   pull,
   push,
   reconnect,
@@ -47,6 +49,8 @@ Two places work:
   sync cloud                   use the sync server (makes a token if this
                                browser has none, so a new workspace)
   sync share                   show a QR code: scan it with a phone to join
+  sync join [link]             join the workspace of a "sync share" link
+                               (pasted, or read from the clipboard)
   sync cloud <address> [token] another server, or a token you already have
   sync                         show what is synced and when
   sync push                    write this browser's data there now
@@ -64,6 +68,10 @@ How it works:
     "sync folder" in the status bar
 
 The default server is ${CLOUD_URL}
+On iPhone and iPad, an app added to the home screen keeps its own data,
+apart from Safari, so scanning the code syncs Safari only. Add the site to
+the home screen, open it, then "sync join" with the link from "copy link".
+
 Anyone with the token (or the QR code) can read and change your workspace,
 so share it only with your own devices.
 
@@ -72,10 +80,10 @@ Something wrong? Run "issue" or open ${ISSUES_URL}`;
 const command: CommandDef = {
   name: 'sync',
   description: 'keep tasks, notes and settings in a folder or on your own server, to share them between devices',
-  usage: 'sync [folder|cloud|share|push|pull|auto on|auto off|connect|off|help]',
+  usage: 'sync [folder|cloud|share|join|push|pull|auto on|auto off|connect|off|help]',
   help: HELP,
   group: 'system',
-  complete: (args) => (args.length <= 1 ? ['folder', 'cloud', 'share', 'push', 'pull', 'auto', 'connect', 'off', 'help'] : args[0] === 'auto' ? ['on', 'off'] : []),
+  complete: (args) => (args.length <= 1 ? ['folder', 'cloud', 'share', 'join', 'push', 'pull', 'auto', 'connect', 'off', 'help'] : args[0] === 'auto' ? ['on', 'off'] : []),
   run: async (ctx) => {
     // Commands are case-insensitive, but a token is not: only the words fold.
     const [name = '', arg = '', arg2 = ''] = ctx.args;
@@ -127,6 +135,30 @@ const command: CommandDef = {
         }
         const now = get(syncState);
         return ctx.render(SyncShare, { link: shareLink(now), server: new URL(now.url).host });
+      }
+
+      if (word === 'join') {
+        let text = ctx.args.slice(1).join(' ');
+        if (!text) {
+          try {
+            text = await navigator.clipboard.readText();
+          } catch {
+            /* no clipboard access: ask for the link below */
+          }
+        }
+        const join = parseJoin(text);
+        if (!join) {
+          ctx.print('usage: sync join <link>', 'error');
+          return ctx.print('on the other device run "sync share", press "copy link", and paste it here', 'muted');
+        }
+        ctx.print(`joining the workspace on ${new URL(join.server).host}…`, 'muted');
+        const r = await joinWorkspace(join.token, join.server, () => false);
+        if (r === 'same') return ctx.print('already syncing with that workspace', 'muted');
+        if (r === 'kept') {
+          ctx.print('connected. This device has its own tasks or notes, so nothing is replaced yet:', 'accent');
+          return ctx.print('run "sync pull" to use the shared copy, or "sync push" to keep this one', 'accent');
+        }
+        return ctx.print(r === 'pulled' ? 'joined: loaded the shared workspace. Changes save on their own.' : 'joined: syncing with the shared workspace', 'success');
       }
 
       if (!connected(s)) {

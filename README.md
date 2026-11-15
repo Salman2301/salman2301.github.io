@@ -178,7 +178,7 @@ Everything lives in your browser. To use the same tasks, notes and settings on a
 **The sync server (works on phones too).** The Worker in [`worker/`](worker/README.md) holds one copy for all your devices:
 
 1. Run `sync cloud` on the device whose data you want to keep. The first time, the browser makes its own token, which opens a new workspace on the server that only this token can read.
-2. Run `sync share` and scan the QR code with your phone's camera. It opens the site and joins the same workspace: a phone with nothing of its own takes the shared copy straight away, and one with its own tasks asks first. On another computer, open the link (`copy link` under the code) the same way.
+2. Run `sync share` and scan the QR code with your phone's camera. It opens the site and joins the same workspace: a phone with nothing of its own takes the shared copy straight away, and one with its own tasks asks first. On another computer, open the link (`copy link` under the code) the same way. On iPhone and iPad, an app added to the home screen keeps its own data, apart from Safari, so scanning syncs Safari only: add the site to the home screen, open it, and run `sync join` with the copied link (with no link it reads the clipboard).
 
 `sync cloud <address> <token>` still works for a token you already have, such as the `SYNC_TOKEN` you set on the Worker. The token rides in the link's `#` part, which browsers never send to a server, and the site takes it out of the address bar as soon as it is read. Anyone with the code can read and change your workspace, so show it only to your own devices.
 
