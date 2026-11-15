@@ -27,7 +27,7 @@ const dir = mkdtempSync(join(tmpdir(), 's2301-sync-'));
 
 execFileSync(WRANGLER, ['d1', 'migrations', 'apply', 's2301', '--local', '--persist-to', dir], { stdio: 'pipe' });
 
-const dev = spawn(WRANGLER, ['dev', '--port', String(PORT), '--local', '--persist-to', dir, '--var', `SYNC_TOKEN:${TOKEN}`], {
+const dev = spawn(WRANGLER, ['dev', '--port', String(PORT), '--local', '--persist-to', dir, '--var', `SYNC_TOKEN:${TOKEN}`, '--var', 'MAX_WORKSPACES:2'], {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let log = '';
@@ -199,4 +199,29 @@ async function run() {
 
   res = await call('/v1/workspace');
   check('the oversized write changed nothing', (await res.json()).rev === 5);
+
+  /* tokens a browser made itself: each opens a workspace of its own */
+  const as = (t) => (path, init = {}) => call(path, { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${t}` } });
+  const a = as('s2301_' + 'A'.repeat(43));
+  const b = as('s2301_' + 'b-_9'.repeat(10) + 'xyz');
+  res = await a('/v1/workspace');
+  check('a made token starts with an empty workspace', res.status === 404, res.status);
+  res = await a('/v1/workspace', { method: 'PUT', body: text(workspace(3)) });
+  check('its first write makes the workspace', res.status === 200 && (await res.json()).rev === 1, res.status);
+  res = await a('/v1/workspace');
+  check('and it reads back', (await res.json()).doc?.data?.['tasks:list']?.length === 3);
+  res = await b('/v1/workspace');
+  check('another made token sees a different, empty workspace', res.status === 404, res.status);
+  res = await call('/v1/workspace');
+  check('the SYNC_TOKEN workspace is untouched', (await res.json()).rev === 5);
+  res = await as('s2301_tooshort')('/v1/workspace');
+  check('a token in the wrong shape is 401', res.status === 401, res.status);
+  res = await as('S2301_' + 'A'.repeat(43))('/v1/workspace');
+  check('the prefix is exact', res.status === 401, res.status);
+  res = await b('/v1/workspace', { method: 'PUT', body: text(workspace()) });
+  check('a second made workspace fits under MAX_WORKSPACES=2', res.status === 200, res.status);
+  res = await as('s2301_' + 'C'.repeat(43))('/v1/workspace', { method: 'PUT', body: text(workspace()) });
+  check('a third is refused: the server is full', res.status === 403, res.status);
+  res = await a('/v1/workspace', { method: 'PUT', body: text(workspace(4), { baseRev: 1 }) });
+  check('existing made workspaces still take writes when full', res.status === 200 && (await res.json()).rev === 2, res.status);
 }

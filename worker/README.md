@@ -19,7 +19,10 @@ write can be read back.
 
 ## The API
 
-All calls except `/health` need `Authorization: Bearer <SYNC_TOKEN>`.
+All calls except `/health` need `Authorization: Bearer <token>`. Two kinds of token work:
+
+- `SYNC_TOKEN`, the secret below: the workspace `default`.
+- A token a browser made itself (`sync cloud` with no token): `s2301_` plus 43 base64url characters, 32 random bytes. Each one opens a workspace of its own, made on its first write and stored under the token's SHA-256, so the token itself is never stored. `MAX_WORKSPACES` (20 in `wrangler.jsonc`) caps how many of these the server holds; past it, a new one's first write gets `403`, and existing ones keep working.
 
 | Method | Path | What it does |
 | --- | --- | --- |
@@ -73,8 +76,14 @@ never touches the deployed database.
 In the site's terminal:
 
 ```text
-sync cloud https://s2301-sync.lucky-unit-af42.workers.dev <token>
+sync cloud            makes a token if this browser has none, and syncs
+sync share            a QR code: scan it with a phone to join
 ```
+
+`sync share` encodes a link to the site with the token (and the server, when
+it is not the default) in the `#` fragment. Opening it joins that workspace;
+the site removes the fragment from the address bar right away.
+`sync cloud <address> <token>` connects with a token you already have.
 
 The first device to connect writes its own copy as revision 1. Every later
 device is offered the server's copy: `sync pull` to use it, `sync push` to

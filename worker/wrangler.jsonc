@@ -20,6 +20,7 @@
   "vars": {
     // Origins allowed to call this from a browser: the live site, `vite dev`,
     // and the port the browser tests preview on.
-    "ALLOWED_ORIGINS": "https://salman2301.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4317"
+    "ALLOWED_ORIGINS": "https://salman2301.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4317",
+    "MAX_WORKSPACES": "20"
   }
 }

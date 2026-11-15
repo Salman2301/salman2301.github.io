@@ -4,6 +4,7 @@ import { commandHelp } from '../core/registry';
 import {
   chooseFolder,
   connectCloud,
+  connectCloudAuto,
   connected,
   disconnect,
   folderSupported,
@@ -12,9 +13,11 @@ import {
   push,
   reconnect,
   setAuto,
+  shareLink,
   SYNC_FILE,
   syncState,
 } from '../core/sync';
+import SyncShare from '../terminal/output/SyncShare.svelte';
 import type { CommandDef } from '../core/types';
 
 function ago(ms: number): string {
@@ -37,11 +40,14 @@ Two places work:
               is sent to a server. Chrome, Edge, Brave and Opera on a
               computer only.
   the server  the Worker in this repo (worker/), so phones and computers
-              share one copy. It asks for a token, which stays in this
-              browser and never goes into a backup.
+              share one copy. This browser makes its own token the first
+              time; it stays here and never goes into a backup.
 
   sync folder                  pick a folder (or a different one)
-  sync cloud <address> <token> use the sync server
+  sync cloud                   use the sync server (makes a token if this
+                               browser has none, so a new workspace)
+  sync share                   show a QR code: scan it with a phone to join
+  sync cloud <address> [token] another server, or a token you already have
   sync                         show what is synced and when
   sync push                    write this browser's data there now
   sync pull                    load the other copy here (replaces what is here)
@@ -58,18 +64,18 @@ How it works:
     "sync folder" in the status bar
 
 The default server is ${CLOUD_URL}
-The token is printed when it is made (see worker/README.md). Anyone with it
-can read and change your workspace, so keep it to your own devices.
+Anyone with the token (or the QR code) can read and change your workspace,
+so share it only with your own devices.
 
 Something wrong? Run "issue" or open ${ISSUES_URL}`;
 
 const command: CommandDef = {
   name: 'sync',
   description: 'keep tasks, notes and settings in a folder or on your own server, to share them between devices',
-  usage: 'sync [folder|cloud|push|pull|auto on|auto off|connect|off|help]',
+  usage: 'sync [folder|cloud|share|push|pull|auto on|auto off|connect|off|help]',
   help: HELP,
   group: 'system',
-  complete: (args) => (args.length <= 1 ? ['folder', 'cloud', 'push', 'pull', 'auto', 'connect', 'off', 'help'] : args[0] === 'auto' ? ['on', 'off'] : []),
+  complete: (args) => (args.length <= 1 ? ['folder', 'cloud', 'share', 'push', 'pull', 'auto', 'connect', 'off', 'help'] : args[0] === 'auto' ? ['on', 'off'] : []),
   run: async (ctx) => {
     // Commands are case-insensitive, but a token is not: only the words fold.
     const [name = '', arg = '', arg2 = ''] = ctx.args;
@@ -81,7 +87,7 @@ const command: CommandDef = {
       if (word === 'folder' || word === 'setup' || word === 'choose') {
         if (!folderSupported()) {
           ctx.print('this browser cannot open folders. Use Chrome or Edge on a computer,', 'error');
-          ctx.print('or sync through the server: "sync cloud <address> <token>".', 'muted');
+          ctx.print('or sync through the server: "sync cloud".', 'muted');
           return ctx.print('(or move your data by hand: "backup" saves a file, "backup import" loads it)', 'muted');
         }
         ctx.print('pick a folder (one inside iCloud Drive, Dropbox or Google Drive syncs between computers)…', 'muted');
@@ -94,23 +100,37 @@ const command: CommandDef = {
       }
 
       if (word === 'cloud' || word === 'server') {
-        if (!arg) {
-          if (s.kind === 'cloud') return ctx.print(`syncing with ${s.url} · revision ${s.rev} · auto ${s.auto ? 'on' : 'off'} · last sync ${ago(s.lastSync)}`);
-          ctx.print(`usage: sync cloud <address> <token>`, 'muted');
-          return ctx.print(`the server in this repo is at ${CLOUD_URL}`, 'muted');
+        if (!arg && s.kind === 'cloud') {
+          ctx.print(`syncing with ${s.url} · revision ${s.rev} · auto ${s.auto ? 'on' : 'off'} · last sync ${ago(s.lastSync)}`);
+          return ctx.print('"sync share" shows a QR code to add a phone', 'muted');
         }
-        if (!arg2) return ctx.print('the token is missing: "sync cloud <address> <token>" (see worker/README.md)', 'error');
-        ctx.print(`checking ${arg}…`, 'muted');
-        const r = await connectCloud(arg, arg2);
+        ctx.print(`checking ${arg || CLOUD_URL}…`, 'muted');
+        const r = arg2 ? { ...(await connectCloud(arg, arg2)), made: false } : await connectCloudAuto(arg || undefined);
+        if (r.made) ctx.print('made a new token for this browser: a new workspace on the server', 'muted');
         if (r.existing) {
           ctx.print(`the server already has a copy with ${r.existing}.`, 'accent');
           return ctx.print('run "sync pull" to use it here, or "sync push" to replace it with this browser\'s data', 'accent');
         }
-        return ctx.print(`syncing with ${r.folder}. Changes save on their own; other devices pick them up when you return to them.`, 'success');
+        ctx.print(`syncing with ${r.folder}. Changes save on their own; other devices pick them up when you return to them.`, 'success');
+        return ctx.print('"sync share" shows a QR code to add a phone', 'muted');
+      }
+
+      if (word === 'share' || word === 'qr') {
+        if (s.kind !== 'cloud') {
+          if (connected(s)) return ctx.print('this browser syncs with a folder, which a phone cannot open. "sync cloud" moves it to the server first.', 'error');
+          ctx.print(`not on the server yet: connecting to ${CLOUD_URL}…`, 'muted');
+          const r = await connectCloudAuto();
+          if (r.existing) {
+            ctx.print(`the server already has a copy with ${r.existing}.`, 'accent');
+            return ctx.print('choose first: "sync pull" to use it here or "sync push" to keep this one, then "sync share" again', 'accent');
+          }
+        }
+        const now = get(syncState);
+        return ctx.render(SyncShare, { link: shareLink(now), server: new URL(now.url).host });
       }
 
       if (!connected(s)) {
-        if (word) return ctx.print('no sync set up yet: run "sync folder" or "sync cloud <address> <token>" (or "sync help")', 'error');
+        if (word) return ctx.print('no sync set up yet: run "sync cloud" or "sync folder" (or "sync help")', 'error');
         return ctx.print(HELP.trim());
       }
       if (word === 'push') {

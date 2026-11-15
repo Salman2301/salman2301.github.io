@@ -13,7 +13,7 @@ import { onStorageChange, persisted } from './storage';
  * - a folder you pick on this computer (`sync folder`): put it in iCloud
  *   Drive, Dropbox, Google Drive, OneDrive or Syncthing. Needs the File System
  *   Access API, so desktop Chromium only, and nothing goes to a server of ours.
- * - the Worker in `worker/` (`sync cloud <address> <token>`): works on phones
+ * - the Worker in `worker/` (`sync cloud`, `sync share`): works on phones
  *   too, and is the one to use when a folder is not an option.
  *
  * Either way:
@@ -47,6 +47,13 @@ export interface SyncState {
   /** Last successful write or read (ms). */
   lastSync: number;
 }
+
+/**
+ * The last server and token this browser used. Kept apart from the sync state
+ * so "sync off" then "sync cloud" finds the same workspace again instead of
+ * making a new one. A `sync:` key, so it never rides in a backup either.
+ */
+const lastCloud = persisted<{ url: string; token: string }>('sync:cloud', { url: '', token: '' }, 0);
 
 const EMPTY: SyncState = { kind: '', folder: '', url: '', token: '', rev: 0, auto: true, fileAt: 0, dirty: false, lastSync: 0 };
 export const syncState = persisted<SyncState>('sync:folder', EMPTY, 0);
@@ -112,6 +119,13 @@ async function idb<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRe
 
 let handle: DirHandle | null = null;
 
+/**
+ * Set while a pull replaces this browser's data. Restoring writes every key,
+ * which the change hook would otherwise read as "the user edited something";
+ * the page reloads right after, and the new page would push the copy back.
+ */
+let restoring = false;
+
 async function savedHandle(): Promise<DirHandle | null> {
   if (handle) return handle;
   try {
@@ -125,7 +139,10 @@ async function savedHandle(): Promise<DirHandle | null> {
 /* ------------------------------------------------------------- reading */
 
 /** Same data, same text: used to skip loads and saves that would change nothing. */
-const dataKey = (b: Backup) => JSON.stringify(b.data);
+// Keys that change on their own (screen time, terminal history, ...) are left
+// out: two copies that differ only there hold the same work, so no "choose a
+// copy" for them.
+const dataKey = (b: Backup) => JSON.stringify(Object.keys(b.data).sort().filter((k) => !QUIET.test(k)).map((k) => [k, b.data[k]]));
 
 /** The folder, with permission to write. `ask` may show the browser's prompt (needs a click). */
 async function folder(ask: boolean): Promise<DirHandle> {
@@ -190,10 +207,11 @@ export async function chooseFolder(): Promise<ConnectResult> {
 export async function connectCloud(address: string, token: string): Promise<ConnectResult> {
   const url = cloud.baseUrl(address);
   const clean = token.trim();
-  if (!clean) throw new SyncError('no token: run "sync cloud <address> <token>"');
+  if (!clean) throw new SyncError('no token: run "sync cloud"');
   await cloud.check(url, clean);
   const remote = await cloud.read(url, clean);
   const label = new URL(url).host;
+  lastCloud.set({ url, token: clean });
   patch({ kind: 'cloud', folder: label, url, token: clean, rev: remote?.rev ?? 0, fileAt: remote ? remote.updatedAt : 0, dirty: true });
   if (remote && dataKey(remote.doc) !== dataKey(snapshot())) {
     // Two copies, one choice: neither side is written yet.
@@ -246,6 +264,7 @@ export async function pull(ask = true): Promise<void> {
     syncState.set(next);
     return;
   }
+  restoring = true;
   restore(found.backup);
   try {
     // storage is frozen once restore starts: write the sync state by hand
@@ -273,7 +292,7 @@ function deviceName(): string {
  */
 async function pushCloud(auto = false): Promise<void> {
   const s = get(syncState);
-  if (!s.url || !s.token) throw new SyncError('no cloud sync yet: run "sync cloud <address> <token>"');
+  if (!s.url || !s.token) throw new SyncError('no cloud sync yet: run "sync cloud"');
   let res = await cloud.write(s.url, s.token, s.rev, snapshot(), deviceName());
   if ('conflict' in res) {
     if (auto) return newerNotice();
@@ -287,7 +306,7 @@ async function pushCloud(auto = false): Promise<void> {
 /** Replace this browser's data with the server's copy, then reload. */
 async function pullCloud(): Promise<void> {
   const s = get(syncState);
-  if (!s.url || !s.token) throw new SyncError('no cloud sync yet: run "sync cloud <address> <token>"');
+  if (!s.url || !s.token) throw new SyncError('no cloud sync yet: run "sync cloud"');
   const remote = await cloud.read(s.url, s.token);
   if (!remote) throw new SyncError('nothing is on the server yet: run "sync push"');
   const next = { rev: remote.rev, fileAt: remote.updatedAt, dirty: false, lastSync: Date.now() };
@@ -295,6 +314,7 @@ async function pullCloud(): Promise<void> {
     patch(next);
     return;
   }
+  restoring = true;
   restore(remote.doc);
   try {
     // storage is frozen once restore starts: write the sync state by hand
@@ -322,6 +342,65 @@ async function checkCloud(): Promise<void> {
   if (dataKey(remote.doc) === dataKey(snapshot())) return patch({ rev: remote.rev, fileAt: remote.updatedAt });
   if (get(syncState).dirty) return newerNotice();
   await pullCloud().catch(failed);
+}
+
+/**
+ * Sync with a server without typing a token: this browser's last one, or a
+ * new one (a new, empty workspace on the server that this browser fills).
+ * `address` defaults to the last server, then CLOUD_URL.
+ */
+export async function connectCloudAuto(address?: string): Promise<ConnectResult & { made: boolean }> {
+  const last = get(lastCloud);
+  const url = cloud.baseUrl(address || last.url || cloud.CLOUD_URL);
+  const reuse = last.token && (!address || cloud.baseUrl(last.url || cloud.CLOUD_URL) === url);
+  const token = reuse ? last.token : cloud.newToken();
+  return { ...(await connectCloud(url, token)), made: !reuse };
+}
+
+/**
+ * The link that puts another device on this browser's server workspace. The
+ * token rides in the #fragment, which browsers never send to a server; the
+ * site reads it on load (joinFromLink) and takes it out of the address bar.
+ */
+export function shareLink(s: SyncState = get(syncState)): string {
+  if (kindOf(s) !== 'cloud' || !s.token) throw new SyncError('not syncing with a server: run "sync cloud" first');
+  const p = new URLSearchParams({ sync: s.token });
+  if (cloud.baseUrl(s.url) !== cloud.CLOUD_URL) p.set('server', s.url);
+  return `${location.origin}${location.pathname}#${p}`;
+}
+
+/** Whether this browser holds tasks or notes of its own (not just the welcome note). */
+function hasOwnData(): boolean {
+  const d = snapshot().data as Record<string, unknown>;
+  const list = (k: string) => (Array.isArray(d[k]) ? (d[k] as unknown[]) : []);
+  return list('tasks:list').length > 0 || list('notes:list').some((n) => (n as { id?: string }).id !== 'welcome');
+}
+
+/**
+ * Opened from a "sync share" link: join that workspace. A browser with
+ * nothing of its own takes the shared copy straight away; one with its own
+ * tasks or notes is asked first, since taking the copy replaces them.
+ */
+async function joinFromLink(): Promise<void> {
+  const m = /[#&]sync=([^&]+)/.exec(location.hash);
+  if (!m) return;
+  const p = new URLSearchParams(location.hash.slice(1));
+  const token = p.get('sync') ?? '';
+  const server = p.get('server') || cloud.CLOUD_URL;
+  // the token must not stay in the address bar, the history or a bookmark
+  history.replaceState(null, '', location.pathname + location.search);
+  const s = get(syncState);
+  if (!token || (kindOf(s) === 'cloud' && s.token === token)) return;
+  try {
+    const r = await connectCloud(server, token);
+    if (!r.existing) return void notify('Syncing with the shared workspace', { body: 'changes on this device now save there too', tone: 'success' });
+    if (hasOwnData() && !confirm(`Use the shared workspace on this device?\n\nIt has ${r.existing}. Taking it replaces the tasks and notes in this browser now.`)) {
+      return void notify('Connected, nothing replaced yet', { body: 'run "sync pull" to use the shared copy, or "sync push" to keep this one', durationMs: 15_000 });
+    }
+    await pull(false);
+  } catch (err) {
+    failed(err);
+  }
 }
 
 /** Stop syncing. The file stays in the folder. */
@@ -379,6 +458,7 @@ function askAgain() {
 }
 
 function schedulePush() {
+  if (restoring) return;
   const s = get(syncState);
   if (!connected(s) || !s.auto || !s.dirty) return;
   // Never overwrite a file this browser has not synced with yet: `sync pull` or `sync push` decides.
@@ -441,11 +521,12 @@ export function startSync() {
     /* ignore */
   }
   onStorageChange((key) => {
-    if (QUIET.test(key)) return;
+    if (restoring || QUIET.test(key)) return;
     if (!get(syncState).dirty) patch({ dirty: true });
     schedulePush();
   });
-  void checkFile();
+  if (/[#&]sync=/.test(location.hash)) void joinFromLink();
+  else void checkFile();
   schedulePush();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void checkFile();

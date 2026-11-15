@@ -15,6 +15,17 @@ export const CLOUD_URL = 'https://s2301-sync.lucky-unit-af42.workers.dev';
 
 export class CloudError extends Error {}
 
+/**
+ * A new token: "s2301_" and 32 random bytes in base64url. The server gives
+ * each one a workspace of its own, made on the first write, so a browser can
+ * start syncing without anyone setting a secret first.
+ */
+export function newToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const b64 = btoa(String.fromCharCode(...bytes));
+  return 's2301_' + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 export interface Remote {
   rev: number;
   updatedAt: number;
@@ -25,7 +36,7 @@ export interface Remote {
 /** `host`, `http://host` and `https://host/` all become one base URL. */
 export function baseUrl(input: string): string {
   const raw = input.trim().replace(/\/+$/, '');
-  if (!raw) throw new CloudError('no address: run "sync cloud <address> <token>"');
+  if (!raw) throw new CloudError('no address: run "sync cloud"');
   const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   let url: URL;
   try {
@@ -42,7 +53,7 @@ async function call(url: string, token: string, path: string, init: RequestInit 
     ...init,
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(init.headers as Record<string, string> | undefined) },
   });
-  if (res.status === 401) throw new CloudError('the server did not accept the token: run "sync cloud <address> <token>"');
+  if (res.status === 401) throw new CloudError('the server did not accept the token: run "sync cloud"');
   return res;
 }
 

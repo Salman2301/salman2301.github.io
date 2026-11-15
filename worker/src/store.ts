@@ -62,6 +62,12 @@ export async function write(db: D1Database, id: string, baseRev: number, doc: st
   return { ok: true, rev, updatedAt: at };
 }
 
+/** How many workspaces have ids starting with `prefix`. */
+export async function countWorkspaces(db: D1Database, prefix: string): Promise<number> {
+  const row = await db.prepare('SELECT count(*) AS n FROM workspace WHERE id LIKE ?').bind(prefix + '%').first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
 export interface RevisionMeta {
   rev: number;
   device: string;
